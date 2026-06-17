@@ -1,0 +1,29 @@
+node_modules/
+dist/
+target/
+test-results/
+playwright-report/
+.idea/
+.env
+.env.local
+.env.*.local
+.local/
+authorization-server/secrets/
+bff/target/
+.DS_Store
+# Per-contributor Claude Code state is NOT tracked (e.g. settings.local.json),
+# EXCEPT the shared project skills under .claude/skills/, which are committed so
+# teammates and CI get them. ".claude/*" ignores the directory's contents but
+# not the directory itself, so "!.claude/skills/" can re-include just the skills.
+.claude/*
+!.claude/skills/
+.codex/
+.cursor/
+.aider*
+# Rendered APISIX route file. Tracked source of truth is
+# api-gateway/apisix.yaml.template; scripts/render-apisix-config.sh
+# produces this file with real secrets substituted from the host env.
+api-gateway/apisix.yaml.local
+
+# Build-phase agent scaffolding (process docs, GOAL packets, resume state) — local only.
+/.agents/

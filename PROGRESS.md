@@ -26,11 +26,14 @@ verification scripts, and harness foundations without changing the token model.
 
 ## Exact next action
 
-Start the scaffold slice by inventorying `../oidc-reference` and copying/adapting the
-minimum BFF front-door foundation into this repo: Auth Service, APISIX gateway, frontend
-shell, Keycloak realm, compose substrate, scripts, and the no-browser-token test harness.
-Use the exact stack pins in `PLAN.md`; if scaffold starts after 2026-06-17, refresh those
-pins before generating manifests. Do not use floating Docker `latest` tags or npm ranges.
+Start Docker Desktop or another Docker daemon, then run:
+
+```sh
+sh scripts/up.sh
+sh scripts/verify-all.sh
+```
+
+After the stack is up, run the live auth/browser proof for `SEC-NO-BROWSER-TOKENS`.
 
 Do not create runnable `scripts/agent-init.sh` or `scripts/agent-loop.sh` yet. Do not
 start the Postgres persistence slice yet.
@@ -73,7 +76,36 @@ The scaffold slice can advance only when:
 
 ## Verifier status
 
-Blocked until scaffold, compose, and `scripts/verify-all.sh` exist in this repo.
+Static scaffold verifier passed:
+
+```sh
+sh scripts/verify-all.sh
+```
+
+Result: PASS for scaffold file presence, exact version pins, no active copied
+`backend-resource-server` routes, no floating Docker `latest` tags, and no npm version
+ranges in `frontend/package.json`. The verifier reports expected pending states for
+service health, `SEC-NO-BROWSER-TOKENS`, and later service/security checks.
+
+Cheap config gates:
+
+```sh
+docker compose config --quiet
+GATEWAY_CLIENT_SECRET=LOCAL_DEV_GATEWAY_CLIENT_SECRET__CHANGE_BEFORE_DEPLOY \
+  CSRF_SIGNING_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
+  sh scripts/render-apisix-config.sh
+```
+
+Result: both passed.
+
+Live stack gate:
+
+```sh
+sh scripts/up.sh
+```
+
+Result: blocked because Docker daemon is not running:
+`Cannot connect to the Docker daemon at unix:///Users/ajaygodbole/.docker/run/docker.sock`.
 
 Current expected proof for future slices:
 - failing test/security case is observed red for the expected reason
@@ -87,9 +119,8 @@ orchestrator has frozen the shared contracts for service agents.
 
 ## Blockers
 
-- No scaffolded app code exists yet.
-- No compose stack exists yet.
-- No runnable verifier exists yet.
+- Docker daemon is not running, so the local stack cannot boot yet.
+- Live `SEC-NO-BROWSER-TOKENS` proof has not run yet.
 - Postgres persistence is intentionally deferred until the first cart authorization ladder
   is proven with in-memory repositories.
 - Harness evidence belongs in verifier output, tests, scripts, and `PROGRESS.md`.
@@ -98,6 +129,8 @@ orchestrator has frozen the shared contracts for service agents.
 
 ## Session handoff
 
-The next agent or human should begin with the scaffold slice and the exact next action
-above. Keep `PLAN.md` as the product/build contract, use `AGENTS.md` as the operating
-contract, use this file for continuity, and update it before ending the session.
+The scaffold files are in place and static verifier gates pass. The next agent or human
+should start Docker, run `sh scripts/up.sh`, then run the live no-browser-token proof
+before marking the scaffold slice done. Keep `PLAN.md` as the product/build contract,
+use `AGENTS.md` as the operating contract, use this file for continuity, and update it
+before ending the session.

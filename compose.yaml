@@ -1,0 +1,122 @@
+name: oidc-service-reference
+
+# Local scaffold stack for the copied BFF/OIDC front door.
+# Browser-facing entrypoints:
+#   - http://127.0.0.1:9080  -> APISIX gateway for /auth/*
+#   - http://127.0.0.1:8080  -> Keycloak realm discovery/login
+#
+# Domain services, SpiceDB, and Postgres are added in later slices. This first
+# scaffold proves the Auth Service, gateway, Keycloak realm, Valkey session
+# store, and frontend shell can stand up without exposing tokens to the browser.
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.6.3
+    command:
+      - start-dev
+      - --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HOSTNAME: http://localhost:8080
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_DB: dev-file
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./authorization-server/realm:/opt/keycloak/data/import:ro
+    networks:
+      - oidc-internal
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >
+          exec 3<>/dev/tcp/localhost/8080 &&
+          printf 'GET /realms/oidc-service-reference/.well-known/openid-configuration HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          head -n1 <&3 | grep -q ' 200 '
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 30s
+
+  valkey:
+    image: valkey/valkey:9.1.0
+    command: ["valkey-server", "--save", "", "--appendonly", "no"]
+    networks:
+      - oidc-internal
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  auth-service:
+    build:
+      context: ./auth-service
+    environment:
+      SERVER_PORT: 8081
+      MANAGEMENT_PORT: 9081
+      MANAGEMENT_ADDRESS: 127.0.0.1
+      SPRING_DATA_REDIS_HOST: valkey
+      APP_BASE_URL: ${APP_BASE_URL:-http://127.0.0.1:5173}
+      OIDC_ISSUER_URI: http://localhost:8080/realms/oidc-service-reference
+      APP_AUTHORIZATION_URI: http://localhost:8080/realms/oidc-service-reference/protocol/openid-connect/auth
+      APP_TOKEN_URI: http://keycloak:8080/realms/oidc-service-reference/protocol/openid-connect/token
+      APP_JWKS_URI: http://keycloak:8080/realms/oidc-service-reference/protocol/openid-connect/certs
+      APP_END_SESSION_URI: http://localhost:8080/realms/oidc-service-reference/protocol/openid-connect/logout
+      APP_COOKIE_SIGNING_KEY: ${CSRF_SIGNING_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}
+      CSRF_SIGNING_KEY: ${CSRF_SIGNING_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}
+      SPRING_PROFILES_ACTIVE: ${AUTH_SERVICE_SPRING_PROFILES_ACTIVE:-local}
+      AUTH_CLIENT_ID: ${AUTH_CLIENT_ID:-commerce-auth}
+      AUTH_CLIENT_SECRET: ${AUTH_CLIENT_SECRET:-LOCAL_DEV_AUTH_CLIENT_SECRET__CHANGE_BEFORE_DEPLOY}
+      OIDC_SCOPES: ${OIDC_SCOPES:-openid,profile,email,roles,api.audience,api.read}
+      OIDC_ROLES_CLAIM_PATH: ${OIDC_ROLES_CLAIM_PATH:-realm_access,roles}
+      APP_REFRESH_REQUIRE_ROTATION: ${APP_REFRESH_REQUIRE_ROTATION:-true}
+      GATEWAY_CLIENT_ID: ${GATEWAY_CLIENT_ID:-commerce-api-gateway}
+      INTERNAL_REFRESH_AUDIENCE: ${INTERNAL_REFRESH_AUDIENCE:-commerce-auth-internal}
+      SESSION_IDLE_TTL: ${SESSION_IDLE_TTL:-1800}
+      SESSION_MAX_TTL: ${SESSION_MAX_TTL:-28800}
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    networks:
+      - oidc-internal
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9081/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 30s
+
+  apisix:
+    image: apache/apisix:3.17.0
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+    environment:
+      APISIX_STAND_ALONE: "true"
+      TZ: "UTC"
+      CSRF_SIGNING_KEY: ${CSRF_SIGNING_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}
+      GATEWAY_CLIENT_SECRET: ${GATEWAY_CLIENT_SECRET:-LOCAL_DEV_GATEWAY_CLIENT_SECRET__CHANGE_BEFORE_DEPLOY}
+    volumes:
+      - ./api-gateway/config.yaml:/usr/local/apisix/conf/config.yaml
+      - ./api-gateway/apisix.yaml.local:/usr/local/apisix/conf/apisix.yaml:ro
+      - ./api-gateway/plugins/bff-session.lua:/usr/local/apisix/apisix/plugins/bff-session.lua:ro
+    ports:
+      - "127.0.0.1:9080:9080"
+    networks:
+      - oidc-internal
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9080"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
+
+networks:
+  oidc-internal:
+    driver: bridge

@@ -1,0 +1,60 @@
+#
+# APISIX route table — standalone mode. TEMPLATE FILE.
+#
+# First scaffold slice: browser-facing /auth/* passthrough only.
+# Domain /api/** routes are added when catalog/cart/order services exist.
+# Unknown /api/** paths therefore match no route and fail closed.
+#
+# Render with:
+#   GATEWAY_CLIENT_SECRET=... CSRF_SIGNING_KEY=... ./scripts/render-apisix-config.sh
+
+upstreams:
+  - id: auth-service
+    type: roundrobin
+    nodes:
+      "auth-service:8081": 1
+
+plugin_configs:
+  # Declared now so the gateway's copied bff-session plugin and secret rendering
+  # path are present in the scaffold. Protected /api/** routes will reference
+  # this config in later slices.
+  - id: bff-session-api
+    plugins:
+      bff-session:
+        auth_service_base: http://auth-service:8081
+        idp_token_url: ${APISIX_IDP_TOKEN_URL}
+        gateway_client_id: ${GATEWAY_CLIENT_ID}
+        gateway_client_secret: ${GATEWAY_CLIENT_SECRET}
+        cookie_signing_key: ${CSRF_SIGNING_KEY}
+        allow_insecure_sid: true
+
+routes:
+  - id: auth-login
+    uri: /auth/login
+    methods: [GET]
+    upstream_id: auth-service
+    plugins:
+      limit-req:
+        rate: 5
+        burst: 10
+        rejected_code: 429
+        key_type: var
+        key: remote_addr
+
+  - id: auth-callback
+    uri: /auth/callback/idp
+    methods: [GET]
+    upstream_id: auth-service
+    plugins:
+      limit-req:
+        rate: 5
+        burst: 10
+        rejected_code: 429
+        key_type: var
+        key: remote_addr
+
+  - id: auth-passthrough
+    uri: /auth/*
+    upstream_id: auth-service
+
+#END
