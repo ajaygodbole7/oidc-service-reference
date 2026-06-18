@@ -73,8 +73,9 @@ newest explicit human instruction, but do not silently override `PLAN.md` locked
 or the hard rules below.
 
 ### Roles
-- **Human:** owns scope changes, approvals for commits/pushes/destructive actions, and
-  any decision that changes the teaching goal.
+- **Human:** owns scope changes, approvals for pushes and destructive actions, and any
+  decision that changes the teaching goal. (Commits at slice acceptance are standard, not
+  per-commit approvals — see Commit convention.)
 - **Orchestrator agent:** owns the loop, chooses the next slice from `PROGRESS.md` and
   `PLAN.md`, delegates only when useful, and runs the final consolidated verifier.
 - **Subagents:** work on isolated, slice-scoped tasks and return summaries, changed files,
@@ -98,6 +99,8 @@ Per-slice loop:
 5. Implement the smallest change that should make it pass.
 6. Run the live gate for the slice.
 7. Mark the slice done in `PROGRESS.md` only when the live gate is green.
+8. Commit the accepted slice locally (code + `PROGRESS.md`), then tear down the stack
+   (`scripts/down.sh`) to reclaim disk. Do not push.
 
 False-green guard: a slice is not done until its relevant live verifier passes in a run
 you watched. No marking-by-inspection, no "unit tests passed so it works", and no
@@ -234,7 +237,10 @@ Plus a sibling `CLAUDE.md` containing only `@AGENTS.md`.
 
 ## Commit convention
 Plain, descriptive commit messages. **Do NOT add a `Co-Authored-By: Claude` trailer** (or
-any AI attribution). Commit/push only when the human asks.
+any AI attribution). **Standard at slice acceptance:** when a slice's live gate is green,
+commit the slice locally (code + the accepted `PROGRESS.md`) and tear down the stack
+(`scripts/down.sh`) to reclaim disk — no need to ask each time. **Never push** without the
+human asking.
 
 ## Local-environment gotchas (same stack as `oidc-reference`; SpiceDB is the new piece)
 Entries tagged `[→ <module>]` relocate to that module's `AGENTS.md` when the module is scaffolded;
