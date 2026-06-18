@@ -16,27 +16,33 @@ Every session must leave these sections populated:
 - `Session handoff`: short continuity note for Claude, Codex, subagents, or humans.
 - `Parallel agents`: active subagents, ownership scopes, returned verifier output, and
   integration blockers once fan-out begins.
+- `Session log`: append-only, timestamped chronology of what each session did — commits and
+  non-commit events alike (boots, prunes, discoveries, gate results). Newest at the bottom;
+  use local time from `date`.
 
 ## Current slice
 
-Scaffold from `../oidc-reference`.
+Authorization substrate (SpiceDB + `commerce-security-common`).
 
-Goal: copy/adapt the BFF front-door, frontend shell, Keycloak realm, compose substrate,
-verification scripts, and harness foundations without changing the token model.
+Scaffold from `../oidc-reference` is DONE and accepted (2026-06-17 18:15): stack boots
+healthy and `SEC-NO-BROWSER-TOKENS` passed live. Next slice adds SpiceDB to Compose with
+schema + seed, and the `commerce-security-common` module (the five primitives + a JOSE-based
+`CommerceJwtValidator` behind the `AuthorizationClient` port). The cart slice consumes it.
 
 ## Exact next action
 
-Run the remaining scaffold proof after the disk cleanup:
+Scaffold proof complete (typecheck + live `up.sh` / `verify-all.sh` / `e2e-auth.sh` all
+green, 2026-06-17 18:15). Start the authorization-substrate slice:
 
-```sh
-corepack pnpm run typecheck
-sh scripts/up.sh
-sh scripts/verify-all.sh
-sh scripts/e2e-auth.sh
-```
+1. Add SpiceDB to `compose.yaml` (image pinned per the version table) with a health gate.
+2. Add the SpiceDB schema + seed relationships under `schema/` (or a `spicedb/` dir).
+3. Stand up `commerce-security-common`: `CommercePrincipal`, `CommerceJwtValidator` (JOSE),
+   `ScopeAuthorizer`, `ResourceAuthorizer`, `DecisionTrace`, plus the `AuthorizationClient`
+   port and a fake/test implementation.
+4. Extend `verify-all.sh` to flip `SEC-SPICEDB-UNAVAILABLE` and the substrate checks from
+   PENDING to live.
 
-Docker was pruned aggressively after the first successful boot because the host disk was
-nearly full, so the next `scripts/up.sh` run will repull/rebuild images.
+Do not start the Postgres persistence slice yet.
 
 Do not create runnable `scripts/agent-init.sh` or `scripts/agent-loop.sh` yet. Do not
 start the Postgres persistence slice yet.
@@ -54,8 +60,9 @@ The scaffold slice can advance only when:
 
 ## Build checklist
 
-- [ ] Scaffold from `oidc-reference`: Auth Service, APISIX gateway, frontend shell,
-      Keycloak realm, compose, scripts, and test harness.
+- [x] Scaffold from `oidc-reference`: Auth Service, APISIX gateway, frontend shell,
+      Keycloak realm, compose, scripts, and test harness. (Accepted 2026-06-17 18:15 —
+      stack boots healthy, `SEC-NO-BROWSER-TOKENS` green live.)
 - [x] Bring up Keycloak, Valkey, APISIX, Auth Service, and frontend shell.
 - [ ] Add SpiceDB, schema, and seed relationships.
 - [ ] Add `commerce-security-common`.
@@ -78,6 +85,17 @@ The scaffold slice can advance only when:
       docs.
 
 ## Verifier status
+
+Scaffold slice ACCEPTED 2026-06-17 18:15 — all gates green live, in a watched run:
+- `sh scripts/up.sh` — stack boots healthy (APISIX 3.16.0-debian, Keycloak 26.6.3, Valkey
+  9.1.0, JDK-26 auth-service).
+- `sh scripts/verify-all.sh` — all `HARNESS-*` PASS incl. `HARNESS-SERVICE-HEALTH` (live).
+- `sh scripts/e2e-auth.sh` — `SEC-NO-BROWSER-TOKENS` PASS (Playwright chromium, 10.4s).
+  Required a fix: `frontend/playwright.config.ts` webServer command `pnpm run dev` →
+  `corepack pnpm run dev` (no global pnpm shim on this host).
+
+Frontend `typecheck` PASS (2026-06-17 17:40; machine Node 24, engine warning vs pinned Node
+26.3.0). No type errors.
 
 Static scaffold verifier passed:
 
@@ -142,11 +160,12 @@ orchestrator has frozen the shared contracts for service agents.
 
 ## Blockers
 
-- Host disk is still tight after cleanup (`/System/Volumes/Data` had about 7.3 GiB free
-  after pruning). Avoid unnecessary Docker rebuild churn.
+- Host disk tight: `/System/Volumes/Data` at 6.4 GiB free / 97% used (2026-06-17 18:15,
+  stack running). A full `up.sh` rebuild succeeded at 7.3 GiB this session, but margin is
+  thin — an ENOSPC mid-build can brick Docker and the shell. Tear the stack down
+  (`scripts/down.sh`) when idle, and free space before adding the SpiceDB/Postgres images.
 - Docker was pruned to 0B images/containers/volumes/build-cache, so the next live run
   must repull/rebuild images.
-- Live `SEC-NO-BROWSER-TOKENS` proof is implemented but has not been observed green yet.
 - Local shell has Node 24.12.0; `frontend/package.json` pins Node 26.3.0, so pnpm emits
   an engine warning until Node is switched.
 - Postgres persistence is intentionally deferred until the first cart authorization ladder
@@ -162,3 +181,31 @@ with Keycloak, Valkey, Auth Service, and APISIX healthy. Docker was then pruned 
 safety, so the next agent should run `corepack pnpm run typecheck`, `sh scripts/up.sh`,
 `sh scripts/verify-all.sh`, and `sh scripts/e2e-auth.sh`. Do not mark the scaffold slice
 done until `SEC-NO-BROWSER-TOKENS` is observed green in the live Playwright run.
+
+## Session log
+
+Append-only, timestamped chronology (newest at the bottom); captures non-commit events too.
+
+- 2026-06-17 16:42 PDT — Codex — committed docs/agent-loop baseline (`58f9c73`).
+- 2026-06-17 16:55 PDT — Codex — committed BFF front-door scaffold (`d8dc180`): auth-service,
+  APISIX auth-only routes, renamed Keycloak realm, frontend shell, honest `verify-all.sh`;
+  pruned portability/conformance/distributed-lock harnesses.
+- 2026-06-17 (16:55–17:34) PDT — Codex — first live boot. Found `apache/apisix:3.17.0` does
+  not exist; corrected the pin to `3.16.0-debian` across PLAN.md, compose.yaml, the Lua test,
+  and verify-all. Stack then booted green: JDK 26 auth-service built; Keycloak 26.6.3, Valkey
+  9.1.0, APISIX 3.16.0 healthy. `verify-idp.sh` + `verify-api-gateway.sh` passed live. Patched
+  `verify-idp.sh` (use the running root Keycloak, no second instance) and `verify-all.sh` (real
+  service health). Fixed the Vite `/auth` proxy to APISIX `:9080`. Authored the
+  `SEC-NO-BROWSER-TOKENS` Playwright proof + `e2e-auth.sh` wiring; added a Corepack `run_pnpm`
+  helper and committed `pnpm-lock.yaml`. Stopped the stack and pruned Docker to 0B for disk.
+- 2026-06-17 17:34 PDT — Codex — committed live-harness fixes (`ce32fa2`); then ran out of tokens.
+- 2026-06-17 17:40 PDT — Claude — progress check: tree clean at `ce32fa2`, stack down, disk
+  7.3 GiB / 97%. Frontend `typecheck` PASS (machine Node 24). Did not run the full `up.sh`
+  rebuild — disk below safe headroom (ENOSPC/brick risk). Live `SEC-NO-BROWSER-TOKENS` still
+  unrun → scaffold slice NOT accepted.
+- 2026-06-17 18:15 PDT — Claude — user authorized building at 7.3 GiB. Ran `up.sh` (full
+  rebuild, no brick; disk 7.3→6.4 GiB), `verify-all.sh` (all `HARNESS-*` PASS live), and
+  `e2e-auth.sh`. First e2e run failed: Playwright webServer used bare `pnpm` (not on PATH);
+  fixed `frontend/playwright.config.ts` to `corepack pnpm run dev`. Re-run:
+  `SEC-NO-BROWSER-TOKENS` PASS (chromium, 10.4s). **Scaffold slice ACCEPTED.** Uncommitted:
+  the playwright.config fix + these PROGRESS updates.

@@ -19,7 +19,7 @@ const config: PlaywrightTestConfig = {
     trace: "retain-on-failure"
   },
   webServer: {
-    command: "pnpm run dev",
+    command: "corepack pnpm run dev",
     url: "http://127.0.0.1:5173",
     // The full-stack gate (scripts/e2e-auth.sh, E2E_FULL_STACK=1) starts ONE
     // persistent Vite that must survive past the Playwright run for the gateway
