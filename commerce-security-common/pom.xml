@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>4.1.0</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>com.example</groupId>
+  <artifactId>commerce-security-common</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <name>commerce-security-common</name>
+  <description>Shared security primitives: JWT validation, scope/resource authorization,
+    and decision trace. "Just enough", not a framework. Focused JOSE, not Spring OAuth2
+    Resource Server auto-configuration.</description>
+
+  <properties>
+    <java.version>26</java.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <!-- Pin the newer Nimbus to match the rest of the platform and keep the
+           enforcer's dependencyConvergence rule green (mirrors auth-service). -->
+      <dependency>
+        <groupId>com.nimbusds</groupId>
+        <artifactId>nimbus-jose-jwt</artifactId>
+        <version>10.9</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+    <!-- JSpecify null-safety annotations; package is @NullMarked. -->
+    <dependency>
+      <groupId>org.jspecify</groupId>
+      <artifactId>jspecify</artifactId>
+      <version>1.0.0</version>
+    </dependency>
+    <!-- Focused JOSE: JWKS source, JWT processor, claim/type verifiers. No Spring. -->
+    <dependency>
+      <groupId>com.nimbusds</groupId>
+      <artifactId>nimbus-jose-jwt</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <!-- Same hygiene gate as auth-service: Java 26, no Lombok, no Jackson 2,
+           and converged dependency versions. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-enforcer-plugin</artifactId>
+        <configuration>
+          <fail>true</fail>
+          <rules>
+            <requireJavaVersion>
+              <version>[26,)</version>
+            </requireJavaVersion>
+            <dependencyConvergence/>
+            <bannedDependencies>
+              <excludes>
+                <exclude>org.projectlombok:lombok</exclude>
+                <exclude>com.fasterxml.jackson.core:jackson-databind</exclude>
+              </excludes>
+            </bannedDependencies>
+          </rules>
+        </configuration>
+        <executions>
+          <execution>
+            <id>enforce</id>
+            <goals>
+              <goal>enforce</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

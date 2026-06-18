@@ -31,16 +31,23 @@ schema + seed, and the `commerce-security-common` module (the five primitives + 
 
 ## Exact next action
 
-Scaffold proof complete (typecheck + live `up.sh` / `verify-all.sh` / `e2e-auth.sh` all
-green, 2026-06-17 18:15). Start the authorization-substrate slice:
+Authorization-substrate slice IN PROGRESS. Done so far (2026-06-17 19:19): the
+`commerce-security-common` module exists with the gate-2 JWT-validation primitive
+(`CommerceJwtValidator`, `CommercePrincipal`, `InvalidTokenException`) — `mvnw clean test`
+green on host JDK 26, enforcer-clean, 10 adversarial real-crypto tests, teeth-proven.
 
-1. Add SpiceDB to `compose.yaml` (image pinned per the version table) with a health gate.
-2. Add the SpiceDB schema + seed relationships under `schema/` (or a `spicedb/` dir).
-3. Stand up `commerce-security-common`: `CommercePrincipal`, `CommerceJwtValidator` (JOSE),
-   `ScopeAuthorizer`, `ResourceAuthorizer`, `DecisionTrace`, plus the `AuthorizationClient`
-   port and a fake/test implementation.
-4. Extend `verify-all.sh` to flip `SEC-SPICEDB-UNAVAILABLE` and the substrate checks from
-   PENDING to live.
+Build it standalone on the host (no Docker): `JAVA_HOME=~/.sdkman/candidates/java/26-amzn`
+then a Maven wrapper against `commerce-security-common/pom.xml`. Always `clean test` — a
+`mv`-style revert can regress source mtime and leave a stale `.class`.
+
+Remaining for this slice:
+1. Finish `commerce-security-common`: `ScopeAuthorizer`, `ResourceAuthorizer`, `DecisionTrace`,
+   the `AuthorizationClient` port (+ `SubjectRef`/`ResourceRef`/`Permission`/`Relationship`),
+   and an in-memory fake — all unit-tested.
+2. Add SpiceDB to `compose.yaml` (pinned image) with a health gate; add `schema.zed` + seed.
+3. Add the real `SpiceDbAuthorizationClient` adapter + a live fake-vs-real contract test.
+4. Add a build entry (root aggregator or verify-all integration) and flip
+   `SEC-SPICEDB-UNAVAILABLE` + the substrate checks from PENDING to live.
 
 Do not start the Postgres persistence slice yet.
 
@@ -65,7 +72,8 @@ The scaffold slice can advance only when:
       stack boots healthy, `SEC-NO-BROWSER-TOKENS` green live.)
 - [x] Bring up Keycloak, Valkey, APISIX, Auth Service, and frontend shell.
 - [ ] Add SpiceDB, schema, and seed relationships.
-- [ ] Add `commerce-security-common`.
+- [ ] Add `commerce-security-common` (in progress: gate-2 JWT primitive done + green;
+      authorizers, `AuthorizationClient` port + fake, `DecisionTrace` remain).
 - [ ] Add `AuthorizationClient` and fake/test implementation.
 - [ ] Build the cart vertical slice: JWT gate, scope gate, SpiceDB resource gate,
       trace writes, cart UI, architecture checks, and core security-verification cases.
@@ -85,6 +93,12 @@ The scaffold slice can advance only when:
       docs.
 
 ## Verifier status
+
+`commerce-security-common` JWT primitive — `mvnw clean test` green on host JDK 26
+(2026-06-17 19:19): enforcer rules pass (Java 26, dependencyConvergence, banned deps);
+`CommerceJwtValidatorTest` 10/10 (valid, at+JWT, single-aud string, bad sig, wrong iss,
+wrong aud, expired, bad typ, multi-aud-without-azp, multi-aud-with-azp). Teeth proven:
+neutering the azp guard turns `rejects_multi_audience_without_azp` red.
 
 Scaffold slice ACCEPTED 2026-06-17 18:15 — all gates green live, in a watched run:
 - `sh scripts/up.sh` — stack boots healthy (APISIX 3.16.0-debian, Keycloak 26.6.3, Valkey
@@ -209,3 +223,12 @@ Append-only, timestamped chronology (newest at the bottom); captures non-commit 
   fixed `frontend/playwright.config.ts` to `corepack pnpm run dev`. Re-run:
   `SEC-NO-BROWSER-TOKENS` PASS (chromium, 10.4s). **Scaffold slice ACCEPTED.** Uncommitted:
   the playwright.config fix + these PROGRESS updates.
+- 2026-06-17 19:19 PDT — Claude — started the authorization-substrate slice. Created
+  `commerce-security-common` (Maven module, parent Spring Boot 4.1.0, Java 26) with the gate-2
+  JWT primitive: `CommerceJwtValidator` (focused Nimbus JOSE — RS256/JWKS, iss,
+  `aud=commerce-api` string-or-array, exp, typ in {JWT, at+JWT}, explicit azp-on-multi-aud),
+  `CommercePrincipal`, `InvalidTokenException`. `mvnw clean test` green on host JDK 26 —
+  enforcer clean, 10/10 adversarial real-crypto tests; teeth proven by mutating the azp guard.
+  (Noted the stale-`.class` trap: a `mv`-revert regressed mtime, so a non-clean run reused the
+  mutated class — always `clean`.) Committed pom + src. Rest of the module + the SpiceDB live
+  half are next.
