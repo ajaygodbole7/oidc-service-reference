@@ -5,10 +5,10 @@ SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 ROOT="$(repo_root "$SCRIPT_DIR")"
 cd "$ROOT"
 
-# Bring up the scaffold local reference stack for development:
+# Bring up the local reference stack for development:
 #   - Browser ingress: APISIX (:9080)
 #   - Authorization Server: Keycloak (:8080)
-#   - Internal only: Auth Service, Valkey
+#   - Internal only: Auth Service, Valkey, SpiceDB
 # Afterwards run `pnpm run dev` in frontend/ for the SPA (Vite, :5173).
 #
 # The dev secrets below are the loud CHANGE_BEFORE_DEPLOY sentinels — safe only
@@ -30,8 +30,9 @@ GATEWAY_CLIENT_SECRET="$DEV_GATEWAY_SECRET" CSRF_SIGNING_KEY="$DEV_CSRF_KEY" \
   sh "$SCRIPT_DIR/render-apisix-config.sh"
 
 info "starting compose stack"
-CSRF_SIGNING_KEY="$DEV_CSRF_KEY" docker compose up -d --build \
-  keycloak valkey auth-service apisix
+SPICEDB_PRESHARED_KEY="${SPICEDB_PRESHARED_KEY:-LOCAL_DEV_SPICEDB_PRESHARED_KEY__CHANGE_BEFORE_DEPLOY}" \
+  CSRF_SIGNING_KEY="$DEV_CSRF_KEY" docker compose up -d --build \
+  keycloak valkey spicedb auth-service apisix
 
 info "waiting for Keycloak + APISIX"
 wait_http       "Keycloak" "http://localhost:8080/realms/oidc-service-reference/.well-known/openid-configuration" 60
@@ -43,6 +44,7 @@ cat <<EOF
   Keycloak                  : http://localhost:8080  (admin/admin)
   Auth Service              : internal service auth-service:8081
   Valkey                    : internal service valkey:6379
+  SpiceDB                   : localhost:50051 (local dev, no TLS)
 
   Next: cd frontend && pnpm run dev  ->  http://127.0.0.1:5173
   Stop: scripts/down.sh

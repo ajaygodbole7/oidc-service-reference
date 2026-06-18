@@ -1,0 +1,20 @@
+definition user {}
+
+definition store {
+  relation manager: user
+  permission view = manager
+  permission manage = manager
+}
+
+definition cart {
+  relation owner: user
+  permission read = owner
+  permission write = owner
+}
+
+definition order {
+  relation owner: user
+  relation support: user
+  permission read = owner + support
+  permission cancel = owner
+}

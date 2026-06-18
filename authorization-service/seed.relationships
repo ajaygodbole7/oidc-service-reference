@@ -1,0 +1,8 @@
+store:main#manager@user:merchant
+
+cart:alice-cart#owner@user:alice
+cart:bob-cart#owner@user:bob
+
+order:alice-order#owner@user:alice
+order:alice-order#support@user:support
+order:bob-order#owner@user:bob

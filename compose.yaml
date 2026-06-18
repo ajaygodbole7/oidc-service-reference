@@ -5,9 +5,9 @@ name: oidc-service-reference
 #   - http://127.0.0.1:9080  -> APISIX gateway for /auth/*
 #   - http://127.0.0.1:8080  -> Keycloak realm discovery/login
 #
-# Domain services, SpiceDB, and Postgres are added in later slices. This first
-# scaffold proves the Auth Service, gateway, Keycloak realm, Valkey session
-# store, and frontend shell can stand up without exposing tokens to the browser.
+# Domain services and Postgres are added in later slices. This local stack proves the
+# Auth Service, gateway, Keycloak realm, Valkey session store, SpiceDB substrate, and
+# frontend shell can stand up without exposing tokens to the browser.
 
 services:
   keycloak:
@@ -49,6 +49,19 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+
+  spicedb:
+    image: ghcr.io/authzed/spicedb:v1.53.0
+    command:
+      - serve
+      - --grpc-preshared-key=${SPICEDB_PRESHARED_KEY:-LOCAL_DEV_SPICEDB_PRESHARED_KEY__CHANGE_BEFORE_DEPLOY}
+      - --http-enabled
+      - --datastore-engine=memory
+    ports:
+      - "127.0.0.1:50051:50051"
+      - "127.0.0.1:8443:8443"
+    networks:
+      - oidc-internal
 
   auth-service:
     build:

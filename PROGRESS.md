@@ -22,48 +22,47 @@ Every session must leave these sections populated:
 
 ## Current slice
 
-Authorization substrate (SpiceDB + `commerce-security-common`).
+Cart vertical slice.
 
 Scaffold from `../oidc-reference` is DONE and accepted (2026-06-17 18:15): stack boots
-healthy and `SEC-NO-BROWSER-TOKENS` passed live. Next slice adds SpiceDB to Compose with
-schema + seed, and the `commerce-security-common` module (the five primitives + a JOSE-based
-`CommerceJwtValidator` behind the `AuthorizationClient` port). The cart slice consumes it.
+healthy and `SEC-NO-BROWSER-TOKENS` passed live. Authorization substrate is DONE and
+accepted (2026-06-17 22:10): SpiceDB starts, schema loads, seed relationships apply,
+fake-vs-real adapter contract passes, and unavailable SpiceDB denies through
+`ResourceAuthorizer`.
 
 ## Exact next action
 
-Authorization-substrate slice IN PROGRESS. Done so far (2026-06-17 19:19): the
-`commerce-security-common` module exists with the gate-2 JWT-validation primitive
-(`CommerceJwtValidator`, `CommercePrincipal`, `InvalidTokenException`) — `mvnw clean test`
-green on host JDK 26, enforcer-clean, 10 adversarial real-crypto tests, teeth-proven.
+Cart vertical slice is NEXT. Use the accepted scaffold + authorization substrate to build
+the first real business flow through all four gates.
 
-Build it standalone on the host (no Docker): `JAVA_HOME=~/.sdkman/candidates/java/26-amzn`
-then a Maven wrapper against `commerce-security-common/pom.xml`. Always `clean test` — a
-`mv`-style revert can regress source mtime and leave a stale `.class`.
+Start with cart-service scaffold and a failing security/contract case before app code:
 
-Remaining for this slice:
-1. Finish `commerce-security-common`: `ScopeAuthorizer`, `ResourceAuthorizer`, `DecisionTrace`,
-   the `AuthorizationClient` port (+ `SubjectRef`/`ResourceRef`/`Permission`/`Relationship`),
-   and an in-memory fake — all unit-tested.
-2. Add SpiceDB to `compose.yaml` (pinned image) with a health gate; add `schema.zed` + seed.
-3. Add the real `SpiceDbAuthorizationClient` adapter + a live fake-vs-real contract test.
-4. Add a build entry (root aggregator or verify-all integration) and flip
-   `SEC-SPICEDB-UNAVAILABLE` + the substrate checks from PENDING to live.
+```sh
+sh scripts/verify-spicedb-live.sh
+sh scripts/verify-commerce-security-common.sh
+```
 
-Do not start the Postgres persistence slice yet.
+Then add `cart-service` with:
+1. JWT validation using `CommerceJwtValidator`.
+2. explicit `ScopeAuthorizer` for `cart:read` / `cart:write`.
+3. explicit `ResourceAuthorizer` checks for `cart:{id}#read/write@user:{sub}`.
+4. trace evidence with bounded/masked gate results.
+5. gateway route + frontend cart UI only after the service gate is proven.
 
 Do not create runnable `scripts/agent-init.sh` or `scripts/agent-loop.sh` yet. Do not
 start the Postgres persistence slice yet.
 
 ## Acceptance gate
 
-The scaffold slice can advance only when:
-- copied/adapted BFF front-door boots locally
-- baseline auth flow runs through the gateway
-- copied `assertNoBrowserTokens` guard passes
-- generated manifests use exact version pins from `PLAN.md`
-- initial `scripts/verify-all.sh` exists and reports the current scaffold state honestly
-  with stable check IDs, bounded/masked output, service-health summary, and explicit
-  pending/skipped states for checks not implemented yet
+The cart slice can advance only when:
+- cart UI and cart-service run through the gateway
+- JWT, scope, and SpiceDB gates are traced
+- `SEC-NO-BROWSER-TOKENS`, `SEC-NON-COMMERCE-AUD`,
+  `SEC-SCOPE-WITHOUT-RELATIONSHIP`, `SEC-RELATIONSHIP-WITHOUT-SCOPE`,
+  `SEC-SPOOFED-IDENTITY-HEADERS`, `SEC-BROWSER-AUTHORIZATION-OVERWRITTEN`, and
+  `SEC-RELATIONSHIP-REMOVAL-IMMEDIATE` pass live
+- architecture checks for controller/service/domain/persistence/security boundaries pass
+- no-browser-token guard remains green
 
 ## Build checklist
 
@@ -71,10 +70,13 @@ The scaffold slice can advance only when:
       Keycloak realm, compose, scripts, and test harness. (Accepted 2026-06-17 18:15 —
       stack boots healthy, `SEC-NO-BROWSER-TOKENS` green live.)
 - [x] Bring up Keycloak, Valkey, APISIX, Auth Service, and frontend shell.
-- [ ] Add SpiceDB, schema, and seed relationships.
-- [ ] Add `commerce-security-common` (in progress: gate-2 JWT primitive done + green;
-      authorizers, `AuthorizationClient` port + fake, `DecisionTrace` remain).
-- [ ] Add `AuthorizationClient` and fake/test implementation.
+- [x] Add SpiceDB, schema, and seed relationships. (Accepted 2026-06-17 22:10 —
+      `scripts/verify-spicedb-live.sh` green.)
+- [x] Add `commerce-security-common`: focused JOSE JWT validator, scope/resource
+      authorizers, decision trace, fake and real SpiceDB adapter. (Accepted
+      2026-06-17 22:10.)
+- [x] Add `AuthorizationClient` and fake/test implementation. (Accepted 2026-06-17
+      22:10 — fake-vs-real contract and unavailable denial proof green.)
 - [ ] Build the cart vertical slice: JWT gate, scope gate, SpiceDB resource gate,
       trace writes, cart UI, architecture checks, and core security-verification cases.
 - [ ] Parallel fan-out after cart: catalog-service agent, order-service agent,
@@ -94,11 +96,51 @@ The scaffold slice can advance only when:
 
 ## Verifier status
 
-`commerce-security-common` JWT primitive — `mvnw clean test` green on host JDK 26
+`commerce-security-common` JWT primitive — `clean test` green on host JDK 26
 (2026-06-17 19:19): enforcer rules pass (Java 26, dependencyConvergence, banned deps);
 `CommerceJwtValidatorTest` 10/10 (valid, at+JWT, single-aud string, bad sig, wrong iss,
 wrong aud, expired, bad typ, multi-aud-without-azp, multi-aud-with-azp). Teeth proven:
 neutering the azp guard turns `rejects_multi_audience_without_azp` red.
+
+Current local primitive additions verified 2026-06-17 21:20 PDT:
+
+```sh
+sh scripts/verify-commerce-security-common.sh
+sh scripts/verify-all.sh
+```
+
+Result: PASS. `commerce-security-common` ran 16 tests (10 JWT real-crypto/adversarial
+tests + 6 scope/resource authorizer tests), enforcer-clean on JDK 26. `verify-all.sh`
+now includes `HARNESS-COMMERCE-SECURITY-COMMON-PRESENT` plus the common-module verifier.
+It reports expected PENDING states for the stopped Compose stack, later `SEC-*` checks,
+and SpiceDB-dependent checks.
+
+SpiceDB static substrate verified 2026-06-17 21:24 PDT:
+
+```sh
+sh scripts/verify-spicedb-static.sh
+docker compose config --quiet
+sh scripts/verify-all.sh
+```
+
+Result: PASS. Compose includes `ghcr.io/authzed/spicedb:v1.53.0` (verified as the current
+GitHub latest release before adding it), `authorization-service/schema.zed` matches the
+planned `user`/`store`/`cart`/`order` schema, and `authorization-service/seed.relationships`
+contains the planned local fixture relationships.
+
+Authorization substrate ACCEPTED 2026-06-17 22:10 PDT:
+
+```sh
+sh scripts/verify-spicedb-live.sh
+sh scripts/verify-all.sh
+```
+
+Result: PASS. `scripts/verify-spicedb-live.sh` started
+`ghcr.io/authzed/spicedb:v1.53.0`, loaded `authorization-service/schema.zed`, applied seed
+relationships through the official Authzed Java SDK (`com.authzed.api:authzed:1.6.0`),
+proved fake-vs-real authorization parity, and proved unavailable SpiceDB denies through
+`ResourceAuthorizer`. `verify-all.sh` passed implemented local checks and reported expected
+PENDING states for the stopped BFF stack/domain-service `SEC-*` gates.
 
 Scaffold slice ACCEPTED 2026-06-17 18:15 — all gates green live, in a watched run:
 - `sh scripts/up.sh` — stack boots healthy (APISIX 3.16.0-debian, Keycloak 26.6.3, Valkey
@@ -174,12 +216,13 @@ orchestrator has frozen the shared contracts for service agents.
 
 ## Blockers
 
-- Host disk tight: `/System/Volumes/Data` at 6.4 GiB free / 97% used (2026-06-17 18:15,
-  stack running). A full `up.sh` rebuild succeeded at 7.3 GiB this session, but margin is
-  thin — an ENOSPC mid-build can brick Docker and the shell. Tear the stack down
-  (`scripts/down.sh`) when idle, and free space before adding the SpiceDB/Postgres images.
-- Docker was pruned to 0B images/containers/volumes/build-cache, so the next live run
-  must repull/rebuild images.
+- Host disk tight: `/System/Volumes/Data` at 6.8 GiB free / 97% used after the SpiceDB
+  pull (2026-06-17 22:11). A full `up.sh` rebuild succeeded at 7.3 GiB earlier this
+  session, but margin is thin — an ENOSPC mid-build can brick Docker and the shell. Tear
+  the stack down (`scripts/down.sh`) when idle, and free space before the cart full-stack
+  run or any Postgres image pull.
+- Docker now has the pinned SpiceDB image locally. `docker system df` showed 2.168 GiB of
+  images and 704.5 MiB build cache after the live substrate proof.
 - Local shell has Node 24.12.0; `frontend/package.json` pins Node 26.3.0, so pnpm emits
   an engine warning until Node is switched.
 - Postgres persistence is intentionally deferred until the first cart authorization ladder
@@ -190,11 +233,11 @@ orchestrator has frozen the shared contracts for service agents.
 
 ## Session handoff
 
-The scaffold files are in place, static verifier gates pass, and the stack booted once
-with Keycloak, Valkey, Auth Service, and APISIX healthy. Docker was then pruned for disk
-safety, so the next agent should run `corepack pnpm run typecheck`, `sh scripts/up.sh`,
-`sh scripts/verify-all.sh`, and `sh scripts/e2e-auth.sh`. Do not mark the scaffold slice
-done until `SEC-NO-BROWSER-TOKENS` is observed green in the live Playwright run.
+The scaffold and authorization-substrate slices are accepted. The next agent should start
+the cart vertical slice with a failing service/security case, then scaffold `cart-service`
+against the existing `commerce-security-common` primitives and SpiceDB seed data. Keep the
+four gates visible in code and traces. Do not start Postgres; cart still uses in-memory
+repositories until the ladder is proven.
 
 ## Session log
 
@@ -232,3 +275,28 @@ Append-only, timestamped chronology (newest at the bottom); captures non-commit 
   (Noted the stale-`.class` trap: a `mv`-revert regressed mtime, so a non-clean run reused the
   mutated class — always `clean`.) Committed pom + src. Rest of the module + the SpiceDB live
   half are next.
+- 2026-06-17 21:17 PDT — Codex — fixed stale handoff state and continued the
+  authorization-substrate slice locally: added `ScopeAuthorizer`, `ResourceAuthorizer`,
+  `DecisionTrace`, `AuthorizationClient` value objects/port, an in-memory fake, module-local
+  `AGENTS.md` + `CLAUDE.md` stubs for `auth-service`, `frontend`, and
+  `commerce-security-common`, plus `scripts/verify-commerce-security-common.sh` wired into
+  `scripts/verify-all.sh`. `sh scripts/verify-commerce-security-common.sh` and
+  `sh scripts/verify-all.sh` passed; root harness now honestly gates the common module while
+  keeping SpiceDB and later service checks PENDING until implemented.
+- 2026-06-17 21:24 PDT — Codex — added the static SpiceDB substrate: pinned
+  `ghcr.io/authzed/spicedb:v1.53.0` Compose service, `authorization-service/schema.zed`,
+  `authorization-service/seed.relationships`, module-local `AGENTS.md` + `CLAUDE.md`, and
+  `scripts/verify-spicedb-static.sh` wired into `verify-all.sh`. Verified
+  `docker compose config --quiet`, `sh scripts/verify-spicedb-static.sh`, and
+  `sh scripts/verify-all.sh` green for implemented local checks. Did not run live Compose
+  image pull/start because disk remains a recorded blocker; schema load, seed apply, real
+  SpiceDB adapter, and unavailable-SpiceDB denial proof remain.
+- 2026-06-17 22:10 PDT — Codex — completed and accepted the authorization-substrate slice.
+  Added official Authzed Java SDK `1.6.0` + gRPC Java `1.72.0`, real
+  `SpiceDbAuthorizationClient`, live fake-vs-real contract test, unavailable-SpiceDB
+  fail-closed proof, and `scripts/verify-spicedb-live.sh`. First live run exposed invalid
+  `--grpc-no-tls` flag for SpiceDB v1.53.0; removed it because plaintext is default unless
+  TLS cert/key flags are provided. Re-run passed: schema loaded, seed relationships applied,
+  fake-vs-real parity green, unavailable path denies. `verify-all.sh` passed implemented
+  checks; full BFF stack/domain-service `SEC-*` checks remain PENDING until cart exists.
+  Stopped the SpiceDB container after verification; the image remains cached.

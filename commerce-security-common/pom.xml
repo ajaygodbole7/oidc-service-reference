@@ -32,6 +32,23 @@
         <artifactId>nimbus-jose-jwt</artifactId>
         <version>10.9</version>
       </dependency>
+      <dependency>
+        <groupId>io.grpc</groupId>
+        <artifactId>grpc-bom</artifactId>
+        <version>1.72.0</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>com.google.guava</groupId>
+        <artifactId>guava</artifactId>
+        <version>33.5.0-jre</version>
+      </dependency>
+      <dependency>
+        <groupId>com.google.errorprone</groupId>
+        <artifactId>error_prone_annotations</artifactId>
+        <version>2.42.0</version>
+      </dependency>
     </dependencies>
   </dependencyManagement>
 
@@ -46,6 +63,24 @@
     <dependency>
       <groupId>com.nimbusds</groupId>
       <artifactId>nimbus-jose-jwt</artifactId>
+    </dependency>
+    <!-- Official SpiceDB Java client; used only behind the AuthorizationClient port. -->
+    <dependency>
+      <groupId>com.authzed.api</groupId>
+      <artifactId>authzed</artifactId>
+      <version>1.6.0</version>
+    </dependency>
+    <dependency>
+      <groupId>io.grpc</groupId>
+      <artifactId>grpc-api</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.grpc</groupId>
+      <artifactId>grpc-stub</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.grpc</groupId>
+      <artifactId>grpc-netty-shaded</artifactId>
     </dependency>
 
     <dependency>

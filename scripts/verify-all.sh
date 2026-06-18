@@ -25,13 +25,17 @@ check_absent_in() {
   pass "$id" "$purpose"
 }
 
-info "oidc-service-reference scaffold verifier"
+info "oidc-service-reference local harness verifier"
 info "evidence is bounded: file names, service health, stable check IDs; no tokens or secrets are printed"
 
 check_file HARNESS-SCAFFOLD-AUTH auth-service/pom.xml "Auth Service scaffold exists"
 check_file HARNESS-SCAFFOLD-GATEWAY api-gateway/apisix.yaml.template "APISIX gateway scaffold exists"
 check_file HARNESS-SCAFFOLD-IDP authorization-server/realm/oidc-service-reference-realm.json "Keycloak realm scaffold exists"
 check_file HARNESS-SCAFFOLD-FRONTEND frontend/package.json "frontend shell scaffold exists"
+check_file HARNESS-COMMERCE-SECURITY-COMMON-PRESENT commerce-security-common/pom.xml \
+  "commerce-security-common scaffold exists"
+check_file HARNESS-SPICEDB-SCHEMA authorization-service/schema.zed "SpiceDB schema exists"
+check_file HARNESS-SPICEDB-SEED authorization-service/seed.relationships "SpiceDB seed relationships exist"
 
 grep -q 'quay.io/keycloak/keycloak:26.6.3' compose.yaml \
   || fail_check HARNESS-PIN-KEYCLOAK "Keycloak image must be pinned to 26.6.3"
@@ -41,6 +45,12 @@ grep -q 'valkey/valkey:9.1.0' compose.yaml \
   || fail_check HARNESS-PIN-VALKEY "Valkey image must be pinned to 9.1.0"
 grep -q '"packageManager": "pnpm@11.7.0"' frontend/package.json \
   || fail_check HARNESS-PIN-PNPM "frontend package manager must be pinned to pnpm 11.7.0"
+grep -q '<artifactId>authzed</artifactId>' commerce-security-common/pom.xml \
+  || fail_check HARNESS-PIN-AUTHZED-JAVA "Authzed Java SDK dependency must be present"
+grep -q '<version>1.6.0</version>' commerce-security-common/pom.xml \
+  || fail_check HARNESS-PIN-AUTHZED-JAVA "Authzed Java SDK must be pinned to 1.6.0"
+grep -q '<version>1.72.0</version>' commerce-security-common/pom.xml \
+  || fail_check HARNESS-PIN-GRPC-JAVA "gRPC Java must be pinned to 1.72.0"
 pass HARNESS-PINNED-VERSIONS "initial manifests use exact scaffold pins"
 
 check_absent_in HARNESS-NO-RESOURCE-SERVER 'backend-resource-server\|resource-server:8082' \
@@ -53,6 +63,9 @@ check_absent_in HARNESS-NO-NPM-RANGES '"[~^*]' \
   "frontend package versions must be exact, not ranges" \
   frontend/package.json
 
+sh scripts/verify-commerce-security-common.sh
+sh scripts/verify-spicedb-static.sh
+
 if command -v docker >/dev/null 2>&1; then
   if docker compose ps >/tmp/oidc-service-reference-compose-ps.out 2>/dev/null; then
     info "service health summary from docker compose ps"
@@ -62,6 +75,9 @@ if command -v docker >/dev/null 2>&1; then
         /tmp/oidc-service-reference-compose-ps.out >/dev/null 2>&1 \
         || { pending HARNESS-SERVICE-HEALTH "$service unavailable or not healthy"; service_health_pending=1; }
     done
+    grep -E "oidc-service-reference-spicedb-1[[:space:]].*Up" \
+      /tmp/oidc-service-reference-compose-ps.out >/dev/null 2>&1 \
+      || { pending HARNESS-SPICEDB-SERVICE "SpiceDB unavailable or not running"; service_health_pending=1; }
     if [ "${service_health_pending:-0}" = "0" ]; then
       pass HARNESS-SERVICE-HEALTH "Keycloak, Valkey, Auth Service, and APISIX are healthy"
     fi
@@ -86,5 +102,6 @@ pending SEC-CHECKOUT-IDEMPOTENT-REPLAY "requires order/payment services"
 pending SEC-CHECKOUT-IDEMPOTENCY-COLLISION "requires order/payment services"
 pending SEC-SPICEDB-UNAVAILABLE "requires SpiceDB"
 pending SEC-RELATIONSHIP-REMOVAL-IMMEDIATE "requires SpiceDB and cart service"
+pending HARNESS-SPICEDB-LIVE "run scripts/verify-spicedb-live.sh for schema load, seed apply, and real adapter contract"
 
-success "scaffold verifier completed with explicit pending checks"
+success "local harness verifier completed with explicit pending checks"
