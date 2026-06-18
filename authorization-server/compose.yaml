@@ -1,6 +1,6 @@
 services:
   keycloak:
-    image: quay.io/keycloak/keycloak:26.6.1
+    image: quay.io/keycloak/keycloak:26.6.3
     command:
       - start-dev
       - --import-realm
@@ -17,4 +17,3 @@ services:
       - "127.0.0.1:8080:8080"
     volumes:
       - ./realm:/opt/keycloak/data/import:ro
-

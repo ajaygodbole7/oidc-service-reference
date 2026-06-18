@@ -201,7 +201,7 @@ scaffold:
 | Frontend UI | Tailwind CSS | `4.3.1` |
 | Frontend UI | shadcn CLI | `4.11.0` |
 | Local IdP | Keycloak image | `quay.io/keycloak/keycloak:26.6.3` |
-| Gateway | APISIX image | `apache/apisix:3.17.0` |
+| Gateway | APISIX image | `apache/apisix:3.16.0-debian` |
 | Session/trace store | Valkey image | `valkey/valkey:9.1.0` |
 | ReBAC | SpiceDB image | `ghcr.io/authzed/spicedb:v1.53.0` |
 | Domain persistence | Postgres image | `postgres:18.4` |

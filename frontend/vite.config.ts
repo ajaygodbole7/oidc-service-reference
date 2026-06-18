@@ -6,16 +6,15 @@ import type { ProxyOptions } from "vite";
 
 // The browser is at http://127.0.0.1:5173. In the Frame B split-BFF
 // architecture there are TWO upstreams instead of one:
-//   - /auth/* → Auth Service (http://127.0.0.1:8081)
-//   - /api/** → APISIX        (http://127.0.0.1:9080)
+//   - /auth/* → APISIX (http://127.0.0.1:9080)
+//   - /api/** → APISIX (http://127.0.0.1:9080)
 //
 // In a full `docker compose up` run, APISIX is the actual ingress and
 // path-routes both /auth/* and /api/** itself. The Vite dev proxy is the
 // dev-loop equivalent of that ingress: it splits the two prefixes here
-// so that the inner loop (frontend dev) can talk to Auth Service running
-// via `./mvnw spring-boot:run` and to APISIX (with the rest of the
-// backend behind it) running in Compose, without the SPA having to know
-// either is separate.
+// so that the inner loop (frontend dev) can talk to the same browser-facing
+// ingress used by the Compose stack, without the SPA knowing that Auth
+// Service is internal-only.
 //
 // Both proxies use the same forwarded-header treatment as before:
 //   - changeOrigin is false so upstreams receive Host: 127.0.0.1:5173
@@ -27,7 +26,7 @@ import type { ProxyOptions } from "vite";
 //     Auth Service, and the Set-Cookie response flows back through Vite.
 //     The browser binds the cookie to origin 5173, so subsequent
 //     /api/** and /auth/me requests carry it.
-const authTarget = process.env.VITE_AUTH_TARGET ?? "http://127.0.0.1:8081";
+const authTarget = process.env.VITE_AUTH_TARGET ?? "http://127.0.0.1:9080";
 const apiTarget = process.env.VITE_API_TARGET ?? "http://127.0.0.1:9080";
 
 const forwardedHeaderProxy = (target: string): ProxyOptions => ({

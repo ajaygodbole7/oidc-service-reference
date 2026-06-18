@@ -7,7 +7,7 @@
 # resolve decision table.
 set -eu
 
-APISIX_IMAGE="${APISIX_IMAGE:-apache/apisix:3.17.0}"
+APISIX_IMAGE="${APISIX_IMAGE:-apache/apisix:3.16.0-debian}"
 GATEWAY_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 REPO_ROOT=$(CDPATH= cd -- "$GATEWAY_DIR/.." && pwd)
 LUAJIT=/usr/local/openresty/luajit/bin/luajit

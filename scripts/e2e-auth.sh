@@ -7,8 +7,15 @@ root="$(repo_root "$script_dir")"
 cd "$root"
 
 require_cmd docker "Start Docker Desktop or Colima."
-require_cmd pnpm "Install pnpm 11.7.0."
 
-warn "live SEC-NO-BROWSER-TOKENS is not implemented in this scaffold yet"
-warn "next step: start the stack with scripts/up.sh, then add a focused Playwright flow for login -> /auth/me -> logout"
-exit 2
+info "SEC-NO-BROWSER-TOKENS live e2e"
+info "evidence is bounded: check ID and pass/fail only; no tokens, cookies, or secrets are printed"
+
+sh scripts/up.sh
+
+(
+  cd "$root/frontend"
+  E2E_FULL_STACK=1 run_pnpm exec playwright test tests/e2e/auth.spec.ts --grep "SEC-NO-BROWSER-TOKENS"
+)
+
+success "SEC-NO-BROWSER-TOKENS passed"

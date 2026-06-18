@@ -52,6 +52,19 @@ require_cmd() {
   command -v "$_cmd" >/dev/null 2>&1 || die "required command '$_cmd' not found.${_hint:+ $_hint}"
 }
 
+# run_pnpm <args...> — use a real pnpm shim when present, otherwise fall back
+# to Corepack's pinned package-manager resolution. This keeps scripts portable
+# across machines that have Corepack but have not globally enabled a pnpm shim.
+run_pnpm() {
+  if command -v pnpm >/dev/null 2>&1; then
+    pnpm "$@"
+  elif command -v corepack >/dev/null 2>&1; then
+    corepack pnpm "$@"
+  else
+    die "required command 'pnpm' not found. Enable pnpm 11.7.0 with Corepack."
+  fi
+}
+
 # wait_http <name> <url> [tries] — poll a URL until it returns 2xx, using
 # curl's own retry (no `sleep` loop). Each try waits ~2s; default ~45 tries
 # (~90s). The URL MUST be one that returns 200 when ready (e.g. an actuator

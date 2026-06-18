@@ -91,7 +91,7 @@ services:
       start_period: 30s
 
   apisix:
-    image: apache/apisix:3.17.0
+    image: apache/apisix:3.16.0-debian
     depends_on:
       keycloak:
         condition: service_healthy

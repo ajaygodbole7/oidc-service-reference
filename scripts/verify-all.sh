@@ -35,8 +35,8 @@ check_file HARNESS-SCAFFOLD-FRONTEND frontend/package.json "frontend shell scaff
 
 grep -q 'quay.io/keycloak/keycloak:26.6.3' compose.yaml \
   || fail_check HARNESS-PIN-KEYCLOAK "Keycloak image must be pinned to 26.6.3"
-grep -q 'apache/apisix:3.17.0' compose.yaml \
-  || fail_check HARNESS-PIN-APISIX "APISIX image must be pinned to 3.17.0"
+grep -q 'apache/apisix:3.16.0-debian' compose.yaml \
+  || fail_check HARNESS-PIN-APISIX "APISIX image must be pinned to 3.16.0-debian"
 grep -q 'valkey/valkey:9.1.0' compose.yaml \
   || fail_check HARNESS-PIN-VALKEY "Valkey image must be pinned to 9.1.0"
 grep -q '"packageManager": "pnpm@11.7.0"' frontend/package.json \
@@ -57,6 +57,14 @@ if command -v docker >/dev/null 2>&1; then
   if docker compose ps >/tmp/oidc-service-reference-compose-ps.out 2>/dev/null; then
     info "service health summary from docker compose ps"
     sed -n '1,12p' /tmp/oidc-service-reference-compose-ps.out
+    for service in keycloak valkey auth-service apisix; do
+      grep -E "oidc-service-reference-${service}-1[[:space:]].*healthy" \
+        /tmp/oidc-service-reference-compose-ps.out >/dev/null 2>&1 \
+        || { pending HARNESS-SERVICE-HEALTH "$service unavailable or not healthy"; service_health_pending=1; }
+    done
+    if [ "${service_health_pending:-0}" = "0" ]; then
+      pass HARNESS-SERVICE-HEALTH "Keycloak, Valkey, Auth Service, and APISIX are healthy"
+    fi
   else
     pending HARNESS-SERVICE-HEALTH "compose stack is not running; run scripts/up.sh when ready"
   fi

@@ -1,7 +1,10 @@
 #!/usr/bin/env sh
 set -eu
 
-cd "$(dirname "$0")/../frontend"
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+. "$script_dir/lib/common.sh"
+root="$(repo_root "$script_dir")"
+cd "$root/frontend"
 
 fail() {
   echo "frontend verification failed: $1" >&2
@@ -13,9 +16,9 @@ fail() {
 [ -d src ] || fail "missing src/"
 [ -d tests ] || fail "missing tests/"
 
-pnpm run lint
-pnpm run typecheck
-pnpm run test
-pnpm run build
-pnpm run check:bundle
-pnpm run test:e2e
+run_pnpm run lint
+run_pnpm run typecheck
+run_pnpm run test
+run_pnpm run build
+run_pnpm run check:bundle
+run_pnpm run test:e2e

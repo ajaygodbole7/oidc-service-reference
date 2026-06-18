@@ -23,8 +23,11 @@ docker compose config >/dev/null
 # probe and assert the rendered config reflects it (a hardcoded value would not).
 probe_pw="__sentinel_probe__"
 rendered_cfg="$(mktemp)"
+started_standalone=0
 cleanup() {
-  docker compose down --remove-orphans >/dev/null 2>&1 || true
+  if [ "$started_standalone" = "1" ]; then
+    docker compose down --remove-orphans >/dev/null 2>&1 || true
+  fi
   rm -f "$rendered_cfg"
 }
 trap cleanup EXIT INT TERM
@@ -51,6 +54,14 @@ console.log("authorization-server compose security checks passed (loopback bind 
 NODE
 
 SMOKE_SKIP_DISCOVERY=1 tests/smoke.sh
-docker compose down --remove-orphans >/dev/null 2>&1 || true
-docker compose up -d
+
+issuer="${OIDC_ISSUER:-http://localhost:8080/realms/oidc-service-reference}"
+if curl -fsS "$issuer/.well-known/openid-configuration" >/dev/null 2>&1; then
+  echo "using already-running Keycloak at $issuer"
+else
+  docker compose down --remove-orphans >/dev/null 2>&1 || true
+  docker compose up -d
+  started_standalone=1
+fi
+
 tests/smoke.sh

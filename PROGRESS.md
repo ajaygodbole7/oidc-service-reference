@@ -26,14 +26,17 @@ verification scripts, and harness foundations without changing the token model.
 
 ## Exact next action
 
-Start Docker Desktop or another Docker daemon, then run:
+Run the remaining scaffold proof after the disk cleanup:
 
 ```sh
+corepack pnpm run typecheck
 sh scripts/up.sh
 sh scripts/verify-all.sh
+sh scripts/e2e-auth.sh
 ```
 
-After the stack is up, run the live auth/browser proof for `SEC-NO-BROWSER-TOKENS`.
+Docker was pruned aggressively after the first successful boot because the host disk was
+nearly full, so the next `scripts/up.sh` run will repull/rebuild images.
 
 Do not create runnable `scripts/agent-init.sh` or `scripts/agent-loop.sh` yet. Do not
 start the Postgres persistence slice yet.
@@ -53,7 +56,7 @@ The scaffold slice can advance only when:
 
 - [ ] Scaffold from `oidc-reference`: Auth Service, APISIX gateway, frontend shell,
       Keycloak realm, compose, scripts, and test harness.
-- [ ] Bring up Keycloak, Valkey, APISIX, Auth Service, and frontend shell.
+- [x] Bring up Keycloak, Valkey, APISIX, Auth Service, and frontend shell.
 - [ ] Add SpiceDB, schema, and seed relationships.
 - [ ] Add `commerce-security-common`.
 - [ ] Add `AuthorizationClient` and fake/test implementation.
@@ -104,8 +107,28 @@ Live stack gate:
 sh scripts/up.sh
 ```
 
-Result: blocked because Docker daemon is not running:
-`Cannot connect to the Docker daemon at unix:///Users/ajaygodbole/.docker/run/docker.sock`.
+Result: passed after correcting the APISIX image pin to
+`apache/apisix:3.16.0-debian`. Keycloak, Valkey, Auth Service, and APISIX reached
+healthy status. The stack was later stopped and Docker images/cache were pruned to
+recover disk space.
+
+Live harness checks observed green before pruning:
+
+```sh
+sh scripts/verify-idp.sh
+sh scripts/verify-api-gateway.sh
+```
+
+Result: IDP static/discovery/JWKS/service-token checks passed against the already-running
+root Keycloak; APISIX Lua decision-table and CSRF fixture parity checks passed.
+
+Harness changes staged for the next run:
+- `scripts/verify-idp.sh` now uses the root Keycloak when it is already running instead
+  of starting a second Keycloak on the same port.
+- `scripts/verify-all.sh` now reports `HARNESS-SERVICE-HEALTH` as PASS only when the
+  required Compose services are healthy.
+- `scripts/e2e-auth.sh` now runs the focused `SEC-NO-BROWSER-TOKENS` Playwright proof.
+- frontend scripts support `pnpm` through Corepack when no global pnpm shim exists.
 
 Current expected proof for future slices:
 - failing test/security case is observed red for the expected reason
@@ -119,8 +142,13 @@ orchestrator has frozen the shared contracts for service agents.
 
 ## Blockers
 
-- Docker daemon is not running, so the local stack cannot boot yet.
-- Live `SEC-NO-BROWSER-TOKENS` proof has not run yet.
+- Host disk is still tight after cleanup (`/System/Volumes/Data` had about 7.3 GiB free
+  after pruning). Avoid unnecessary Docker rebuild churn.
+- Docker was pruned to 0B images/containers/volumes/build-cache, so the next live run
+  must repull/rebuild images.
+- Live `SEC-NO-BROWSER-TOKENS` proof is implemented but has not been observed green yet.
+- Local shell has Node 24.12.0; `frontend/package.json` pins Node 26.3.0, so pnpm emits
+  an engine warning until Node is switched.
 - Postgres persistence is intentionally deferred until the first cart authorization ladder
   is proven with in-memory repositories.
 - Harness evidence belongs in verifier output, tests, scripts, and `PROGRESS.md`.
@@ -129,8 +157,8 @@ orchestrator has frozen the shared contracts for service agents.
 
 ## Session handoff
 
-The scaffold files are in place and static verifier gates pass. The next agent or human
-should start Docker, run `sh scripts/up.sh`, then run the live no-browser-token proof
-before marking the scaffold slice done. Keep `PLAN.md` as the product/build contract,
-use `AGENTS.md` as the operating contract, use this file for continuity, and update it
-before ending the session.
+The scaffold files are in place, static verifier gates pass, and the stack booted once
+with Keycloak, Valkey, Auth Service, and APISIX healthy. Docker was then pruned for disk
+safety, so the next agent should run `corepack pnpm run typecheck`, `sh scripts/up.sh`,
+`sh scripts/verify-all.sh`, and `sh scripts/e2e-auth.sh`. Do not mark the scaffold slice
+done until `SEC-NO-BROWSER-TOKENS` is observed green in the live Playwright run.
