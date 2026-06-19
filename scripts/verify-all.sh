@@ -26,7 +26,7 @@ check_absent_in() {
 }
 
 info "oidc-service-reference local harness verifier"
-info "evidence is bounded: file names, service health, stable check IDs; no tokens or secrets are printed"
+info "evidence is bounded: file names, service health, stable check IDs, and explicit PENDING states; no tokens or secrets are printed"
 
 check_file HARNESS-SCAFFOLD-AUTH auth-service/pom.xml "Auth Service scaffold exists"
 check_file HARNESS-SCAFFOLD-GATEWAY api-gateway/apisix.yaml.template "APISIX gateway scaffold exists"
@@ -34,6 +34,7 @@ check_file HARNESS-SCAFFOLD-IDP authorization-server/realm/oidc-service-referenc
 check_file HARNESS-SCAFFOLD-FRONTEND frontend/package.json "frontend shell scaffold exists"
 check_file HARNESS-COMMERCE-SECURITY-COMMON-PRESENT commerce-security-common/pom.xml \
   "commerce-security-common scaffold exists"
+check_file HARNESS-CART-SERVICE-PRESENT cart-service/pom.xml "cart-service scaffold exists"
 check_file HARNESS-SPICEDB-SCHEMA authorization-service/schema.zed "SpiceDB schema exists"
 check_file HARNESS-SPICEDB-SEED authorization-service/seed.relationships "SpiceDB seed relationships exist"
 
@@ -51,6 +52,14 @@ grep -q '<version>1.6.0</version>' commerce-security-common/pom.xml \
   || fail_check HARNESS-PIN-AUTHZED-JAVA "Authzed Java SDK must be pinned to 1.6.0"
 grep -q '<version>1.72.0</version>' commerce-security-common/pom.xml \
   || fail_check HARNESS-PIN-GRPC-JAVA "gRPC Java must be pinned to 1.72.0"
+grep -q '<artifactId>guava</artifactId>' commerce-security-common/pom.xml \
+  || fail_check HARNESS-PIN-GUAVA "Guava dependency management override must be present"
+grep -q '<version>33.5.0-jre</version>' commerce-security-common/pom.xml \
+  || fail_check HARNESS-PIN-GUAVA "Guava must be pinned to 33.5.0-jre"
+grep -q '<artifactId>error_prone_annotations</artifactId>' commerce-security-common/pom.xml \
+  || fail_check HARNESS-PIN-ERROR-PRONE-ANNOTATIONS "Error Prone annotations override must be present"
+grep -q '<version>2.42.0</version>' commerce-security-common/pom.xml \
+  || fail_check HARNESS-PIN-ERROR-PRONE-ANNOTATIONS "Error Prone annotations must be pinned to 2.42.0"
 pass HARNESS-PINNED-VERSIONS "initial manifests use exact scaffold pins"
 
 check_absent_in HARNESS-NO-RESOURCE-SERVER 'backend-resource-server\|resource-server:8082' \
@@ -65,6 +74,8 @@ check_absent_in HARNESS-NO-NPM-RANGES '"[~^*]' \
 
 sh scripts/verify-commerce-security-common.sh
 sh scripts/verify-spicedb-static.sh
+sh scripts/verify-cart-service.sh
+sh tests/security/verify-cart-security-draft.sh
 
 if command -v docker >/dev/null 2>&1; then
   if docker compose ps >/tmp/oidc-service-reference-compose-ps.out 2>/dev/null; then
@@ -79,7 +90,7 @@ if command -v docker >/dev/null 2>&1; then
       /tmp/oidc-service-reference-compose-ps.out >/dev/null 2>&1 \
       || { pending HARNESS-SPICEDB-SERVICE "SpiceDB unavailable or not running"; service_health_pending=1; }
     if [ "${service_health_pending:-0}" = "0" ]; then
-      pass HARNESS-SERVICE-HEALTH "Keycloak, Valkey, Auth Service, and APISIX are healthy"
+      pass HARNESS-SERVICE-HEALTH "Keycloak, Valkey, Auth Service, and APISIX are healthy; SpiceDB is running"
     fi
   else
     pending HARNESS-SERVICE-HEALTH "compose stack is not running; run scripts/up.sh when ready"
@@ -89,19 +100,20 @@ else
 fi
 
 pending SEC-NO-BROWSER-TOKENS "requires live auth flow through APISIX and frontend"
-pending SEC-NON-COMMERCE-AUD "requires commerce service JWT gate"
+pending SEC-NON-COMMERCE-AUD "run sh tests/security/verify-cart-security-live.sh SEC-NON-COMMERCE-AUD for the local auth-service audience fixture"
 pending SEC-CATALOG-ANONYMOUS-READ-ONLY "requires catalog service"
-pending SEC-SCOPE-WITHOUT-RELATIONSHIP "requires cart service and SpiceDB"
-pending SEC-RELATIONSHIP-WITHOUT-SCOPE "requires cart service and SpiceDB"
-pending SEC-SPOOFED-IDENTITY-HEADERS "requires protected /api route"
-pending SEC-BROWSER-AUTHORIZATION-OVERWRITTEN "requires protected /api route"
+pending SEC-SCOPE-WITHOUT-RELATIONSHIP "run sh tests/security/verify-cart-security-live.sh SEC-SCOPE-WITHOUT-RELATIONSHIP for the live cross-user cart request"
+pending SEC-RELATIONSHIP-WITHOUT-SCOPE "run sh tests/security/verify-cart-security-live.sh SEC-RELATIONSHIP-WITHOUT-SCOPE for the local missing-scope fixture"
+pending SEC-SPOOFED-IDENTITY-HEADERS "run sh tests/security/verify-cart-security-live.sh SEC-SPOOFED-IDENTITY-HEADERS for the APISIX stripped-header proof"
+pending SEC-BROWSER-AUTHORIZATION-OVERWRITTEN "run sh tests/security/verify-cart-security-live.sh SEC-BROWSER-AUTHORIZATION-OVERWRITTEN for the gateway bearer overwrite proof"
 pending SEC-PAYMENT-NO-BROWSER-ROUTE "requires payment service"
 pending SEC-PAYMENT-WRONG-CLIENT "requires payment service"
 pending SEC-PAYMENT-REJECTS-USER-TOKEN "requires payment service"
 pending SEC-CHECKOUT-IDEMPOTENT-REPLAY "requires order/payment services"
 pending SEC-CHECKOUT-IDEMPOTENCY-COLLISION "requires order/payment services"
 pending SEC-SPICEDB-UNAVAILABLE "requires SpiceDB"
-pending SEC-RELATIONSHIP-REMOVAL-IMMEDIATE "requires SpiceDB and cart service"
+pending SEC-RELATIONSHIP-REMOVAL-IMMEDIATE "run sh tests/security/verify-cart-security-live.sh SEC-RELATIONSHIP-REMOVAL-IMMEDIATE for the local relationship removal fixture"
+pending HARNESS-CART-SPICEDB-LIVE "run CART_SPICEDB_LIVE=1 sh scripts/verify-cart-service.sh or sh scripts/verify-cart-spicedb-live.sh for the real cart SpiceDB argument proof"
 pending HARNESS-SPICEDB-LIVE "run scripts/verify-spicedb-live.sh for schema load, seed apply, and real adapter contract"
 
 success "local harness verifier completed with explicit pending checks"

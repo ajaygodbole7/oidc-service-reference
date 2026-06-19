@@ -5,7 +5,9 @@ import com.authzed.api.v1.CheckPermissionResponse;
 import com.authzed.api.v1.Consistency;
 import com.authzed.api.v1.ObjectReference;
 import com.authzed.api.v1.PermissionsServiceGrpc;
+import com.authzed.api.v1.RelationshipUpdate;
 import com.authzed.api.v1.SubjectReference;
+import com.authzed.api.v1.WriteRelationshipsRequest;
 import com.authzed.grpcutil.BearerToken;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
@@ -23,6 +25,14 @@ public final class SpiceDbAuthorizationClient implements AuthorizationClient, Au
 
   public SpiceDbAuthorizationClient(String target, String presharedKey, boolean plaintext) {
     this(target, presharedKey, plaintext, 2_000);
+  }
+
+  public void touchRelationship(ResourceRef resource, String relation, SubjectRef subject) {
+    writeRelationship(RelationshipUpdate.Operation.OPERATION_TOUCH, resource, relation, subject);
+  }
+
+  public void deleteRelationship(ResourceRef resource, String relation, SubjectRef subject) {
+    writeRelationship(RelationshipUpdate.Operation.OPERATION_DELETE, resource, relation, subject);
   }
 
   public SpiceDbAuthorizationClient(
@@ -63,7 +73,15 @@ public final class SpiceDbAuthorizationClient implements AuthorizationClient, Au
 
   @Override
   public void close() {
-    channel.shutdownNow();
+    channel.shutdown();
+    try {
+      if (!channel.awaitTermination(5, TimeUnit.SECONDS)) {
+        channel.shutdownNow();
+      }
+    } catch (InterruptedException e) {
+      channel.shutdownNow();
+      Thread.currentThread().interrupt();
+    }
   }
 
   private static ObjectReference object(ResourceRef resource) {
@@ -78,5 +96,26 @@ public final class SpiceDbAuthorizationClient implements AuthorizationClient, Au
         .setObjectType(subject.type())
         .setObjectId(subject.id())
         .build();
+  }
+
+  private void writeRelationship(
+      RelationshipUpdate.Operation operation,
+      ResourceRef resource,
+      String relation,
+      SubjectRef subject) {
+    try {
+      permissions
+          .withDeadlineAfter(deadlineMillis, TimeUnit.MILLISECONDS)
+          .writeRelationships(WriteRelationshipsRequest.newBuilder()
+              .addUpdates(RelationshipUpdate.newBuilder()
+                  .setOperation(operation)
+                  .setRelationship(com.authzed.api.v1.Relationship.newBuilder()
+                      .setResource(object(resource))
+                      .setRelation(relation)
+                      .setSubject(SubjectReference.newBuilder().setObject(object(subject)))))
+              .build());
+    } catch (RuntimeException e) {
+      throw new AuthorizationUnavailableException("SpiceDB unavailable", e);
+    }
   }
 }

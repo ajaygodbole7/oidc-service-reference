@@ -93,6 +93,7 @@ export type CallApiOptions = {
   readonly method?: string;
   readonly body?: unknown;
   readonly headers?: Readonly<Record<string, string>>;
+  readonly signal?: AbortSignal;
 };
 
 // Methods that never carry a CSRF requirement at the gateway (RFC 7231 safe /
@@ -109,6 +110,10 @@ export async function callApi(
   options: CallApiOptions = {},
   navigate: Navigate = browserNavigate
 ): Promise<Response> {
+  if (!isSameOriginApiPath(path)) {
+    throw new Error("callApi requires a same-origin /api path");
+  }
+
   const method = (options.method ?? "GET").toUpperCase();
   const headers: Record<string, string> = {
     Accept: "application/json",
@@ -132,6 +137,7 @@ export async function callApi(
   }
 
   const init: RequestInit = { credentials: "include", headers };
+  if (options.signal) init.signal = options.signal;
   // Omit `method` for the GET default so the bare-GET request shape stays
   // identical to fetch's own default (method defaults to GET); only set it
   // for explicit non-GET methods.
@@ -151,6 +157,10 @@ export async function callApi(
     );
   }
   return res;
+}
+
+function isSameOriginApiPath(path: string): boolean {
+  return path === "/api" || path.startsWith("/api/") || path.startsWith("/api?");
 }
 
 export async function signOut(navigate: Navigate = browserNavigate): Promise<void> {

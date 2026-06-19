@@ -1,0 +1,21 @@
+server:
+  port: ${SERVER_PORT:8083}
+
+management:
+  server:
+    port: ${MANAGEMENT_PORT:9083}
+    address: ${MANAGEMENT_ADDRESS:127.0.0.1}
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+cart:
+  oidc:
+    issuer-uri: ${CART_OIDC_ISSUER_URI:http://localhost:8080/realms/oidc-service-reference}
+    audience: ${CART_OIDC_AUDIENCE:commerce-api}
+    jwks-uri: ${CART_OIDC_JWKS_URI:http://keycloak:8080/realms/oidc-service-reference/protocol/openid-connect/certs}
+  spicedb:
+    target: ${CART_SPICEDB_TARGET:spicedb:50051}
+    preshared-key: ${CART_SPICEDB_PRESHARED_KEY:LOCAL_DEV_SPICEDB_PRESHARED_KEY__CHANGE_BEFORE_DEPLOY}
+    plaintext: ${CART_SPICEDB_PLAINTEXT:true}

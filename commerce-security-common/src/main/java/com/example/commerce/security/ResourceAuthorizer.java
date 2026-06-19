@@ -18,10 +18,10 @@ public final class ResourceAuthorizer {
     AuthorizationDecision decision;
     try {
       decision = client.check(subject, resource, permission);
-    } catch (RuntimeException e) {
+    } catch (AuthorizationUnavailableException e) {
       DecisionTrace trace = DecisionTrace.resource(
           false, subject, resource, permission, "authorization_unavailable");
-      throw new AuthorizationDeniedException("resource authorization unavailable", trace);
+      throw new AuthorizationDeniedException("resource authorization unavailable", trace, e);
     }
     if (!decision.allowed()) {
       throw new AuthorizationDeniedException("resource authorization denied", decision.trace());

@@ -22,32 +22,48 @@ Every session must leave these sections populated:
 
 ## Current slice
 
-Cart vertical slice.
+Cart vertical slice — ACCEPTED locally on 2026-06-18 22:46 PDT.
 
 Scaffold from `../oidc-reference` is DONE and accepted (2026-06-17 18:15): stack boots
 healthy and `SEC-NO-BROWSER-TOKENS` passed live. Authorization substrate is DONE and
 accepted (2026-06-17 22:10): SpiceDB starts, schema loads, seed relationships apply,
 fake-vs-real adapter contract passes, and unavailable SpiceDB denies through
-`ResourceAuthorizer`.
+`ResourceAuthorizer`. Cart is now accepted: the cart UI and cart-service run through APISIX,
+the JWT/scope/SpiceDB gates are explicit, all cart `SEC-*` cases passed live, and the
+no-browser-token guard remains green.
 
 ## Exact next action
 
-Cart vertical slice is NEXT. Use the accepted scaffold + authorization substrate to build
-the first real business flow through all four gates.
+Cart vertical slice is ACCEPTED locally. The next concrete action is to commit the accepted
+cart slice and then move to parallel fan-out under the documented ownership scopes:
+catalog-service, order-service, payment-service, frontend workflow, harness/security, and
+later persistence. Do not start Postgres until the commit is made and the next slice is chosen.
 
-Start with cart-service scaffold and a failing security/contract case before app code:
+Useful acceptance evidence to preserve:
 
 ```sh
-sh scripts/verify-spicedb-live.sh
-sh scripts/verify-commerce-security-common.sh
+sh scripts/verify-cart-service.sh
+sh tests/security/verify-cart-security-draft.sh
+sh scripts/verify-all.sh
+SMOKE_SKIP_DISCOVERY=1 sh authorization-server/tests/smoke.sh
+docker compose config --quiet
+cd frontend && corepack pnpm run typecheck
+cd frontend && corepack pnpm exec vitest run src/App.test.tsx src/auth.test.ts src/architecture.test.ts
+sh scripts/verify-cart-spicedb-live.sh
+E2E_CART_SKIP_UP=1 sh scripts/e2e-cart.sh
+sh tests/security/verify-cart-security-live.sh SEC-SPOOFED-IDENTITY-HEADERS
+sh tests/security/verify-cart-security-live.sh SEC-SCOPE-WITHOUT-RELATIONSHIP SEC-BROWSER-AUTHORIZATION-OVERWRITTEN SEC-RELATIONSHIP-REMOVAL-IMMEDIATE SEC-RELATIONSHIP-WITHOUT-SCOPE SEC-NON-COMMERCE-AUD
+cd frontend && E2E_FULL_STACK=1 corepack pnpm exec playwright test tests/e2e/auth.spec.ts --grep SEC-NO-BROWSER-TOKENS
 ```
 
-Then add `cart-service` with:
-1. JWT validation using `CommerceJwtValidator`.
-2. explicit `ScopeAuthorizer` for `cart:read` / `cart:write`.
-3. explicit `ResourceAuthorizer` checks for `cart:{id}#read/write@user:{sub}`.
-4. trace evidence with bounded/masked gate results.
-5. gateway route + frontend cart UI only after the service gate is proven.
+Next concrete implementation steps:
+1. Keep verifier runs sequential when they invoke Maven `clean`; parallel Maven gates can
+   delete each other's reactor outputs.
+2. Commit the accepted cart slice locally, including `PROGRESS.md`.
+3. Tear down the stack and prune build cache after the commit to protect disk.
+4. Start parallel fan-out only after the commit is in place.
+5. Keep using `E2E_CART_SKIP_UP=1 sh scripts/e2e-cart.sh` when the stack is already healthy;
+   run full `sh scripts/up.sh` only when the stack or rendered APISIX config changed.
 
 Do not create runnable `scripts/agent-init.sh` or `scripts/agent-loop.sh` yet. Do not
 start the Postgres persistence slice yet.
@@ -77,8 +93,11 @@ The cart slice can advance only when:
       2026-06-17 22:10.)
 - [x] Add `AuthorizationClient` and fake/test implementation. (Accepted 2026-06-17
       22:10 — fake-vs-real contract and unavailable denial proof green.)
-- [ ] Build the cart vertical slice: JWT gate, scope gate, SpiceDB resource gate,
+- [x] Build the cart vertical slice: JWT gate, scope gate, SpiceDB resource gate,
       trace writes, cart UI, architecture checks, and core security-verification cases.
+      (Accepted 2026-06-18 22:46 PDT — cart-service + frontend tests green,
+      live SpiceDB proof green, `SEC-NO-BROWSER-TOKENS` green, and all cart live
+      `SEC-*` cases green.)
 - [ ] Parallel fan-out after cart: catalog-service agent, order-service agent,
       payment-service agent, frontend workflow agent, and harness/security agent work under
       explicit ownership scopes.
@@ -141,6 +160,113 @@ relationships through the official Authzed Java SDK (`com.authzed.api:authzed:1.
 proved fake-vs-real authorization parity, and proved unavailable SpiceDB denies through
 `ResourceAuthorizer`. `verify-all.sh` passed implemented local checks and reported expected
 PENDING states for the stopped BFF stack/domain-service `SEC-*` gates.
+
+Cart scaffold local gates verified 2026-06-17 22:31 PDT:
+
+```sh
+sh scripts/verify-cart-service.sh
+sh tests/security/verify-cart-security-draft.sh
+HARNESS_PROFILE=local sh tests/security/verify-cart-security-draft.sh
+sh scripts/verify-all.sh
+cd frontend && corepack pnpm run typecheck
+cd frontend && corepack pnpm exec vitest run src/App.test.tsx
+```
+
+Result: PASS. `verify-cart-service.sh` builds `commerce-security-common` and `cart-service`
+in a root Maven reactor; cart-service tests ran 6/6 green and keep scope/resource gates
+visible. Frontend cart component tests ran 6/6 green. Draft security harness reports stable
+`SEC-*` IDs with actionable PENDING states. Playwright cart e2e could not be re-run in this
+main thread because the sandbox blocked binding `127.0.0.1:5173`, and escalation is blocked
+by the current Codex usage limit.
+
+Cart local integration gates verified 2026-06-18 16:40 PDT:
+
+```sh
+sh scripts/verify-cart-service.sh
+sh tests/security/verify-cart-security-draft.sh
+SMOKE_SKIP_DISCOVERY=1 sh authorization-server/tests/smoke.sh
+GATEWAY_CLIENT_SECRET=LOCAL_DEV_GATEWAY_CLIENT_SECRET__CHANGE_BEFORE_DEPLOY \
+  CSRF_SIGNING_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
+  sh scripts/render-apisix-config.sh
+docker compose config --quiet
+cd frontend && corepack pnpm run typecheck
+cd frontend && corepack pnpm exec vitest run src/App.test.tsx src/auth.test.ts src/architecture.test.ts
+sh scripts/verify-cart-spicedb-live.sh
+docker compose stop spicedb
+sh scripts/verify-all.sh
+```
+
+Result: PASS for local/static gates. `verify-cart-service.sh` ran 19 common tests
+(1 live SpiceDB test skipped in the normal local run) and 15 cart tests. The frontend
+typecheck passed with the known local Node 24 vs pinned Node 26 warning; focused Vitest ran
+33 tests green. The narrow cart SpiceDB live gate passed with no skipped live SpiceDB test:
+real SpiceDB matched the in-memory fake for seeded cart relationships and unavailable
+SpiceDB denied. `verify-all.sh` passed implemented gates and kept full-stack/browser cart
+`SEC-*` checks explicitly PENDING until live fixtures and the APISIX cart flow are run.
+
+Cart live browser/gateway proof verified 2026-06-18 17:37 PDT:
+
+```sh
+docker builder prune -af
+docker compose rm -sf keycloak
+docker compose up -d keycloak
+docker compose up -d --no-build auth-service cart-service apisix
+docker compose restart apisix
+sh scripts/verify-cart-spicedb-live.sh
+cd frontend && E2E_FULL_STACK=1 corepack pnpm exec playwright test tests/e2e/cart-live.spec.ts
+cd frontend && E2E_FULL_STACK=1 corepack pnpm exec playwright test tests/e2e/auth.spec.ts --grep SEC-NO-BROWSER-TOKENS
+E2E_CART_SKIP_UP=1 sh scripts/e2e-cart.sh
+sh scripts/verify-all.sh
+```
+
+Result: PASS after fixes. Live stack health is green for Keycloak, Valkey, SpiceDB,
+Auth Service, cart-service, and APISIX. Key fixes: APISIX is restarted after auth/cart
+service convergence to avoid stale upstream IPs; protected cart routes attach the
+`bff-session` plugin directly so bearer injection runs; Keycloak local users now emit a
+stable `sub` from `commerce_sub` so cart-service can authorize `user:alice` against
+SpiceDB; `scripts/e2e-cart.sh` supports `E2E_CART_SKIP_UP=1` for already-running stacks.
+Live proofs green: `SEC-NO-BROWSER-TOKENS`, `SEC-CART-CURRENT-USER-SPICEDB`, and
+`SEC-SCOPE-WITHOUT-RELATIONSHIP`. `verify-all.sh` is green and still reports expected
+PENDING states for the remaining not-yet-live cart/security fixtures.
+
+Additional fixes from the 2026-06-18 review pass:
+- Cart web error handling now maps validation to 400, missing principal binding to 401,
+  and unexpected failures to sanitized `application/problem+json` 500.
+- Cart response cent values use `long`; invalid money scale is rejected as a bad request.
+- In-memory cart repository returns/stores aggregate copies so tests cannot accidentally
+  prove behavior through shared mutable instances.
+- `ResourceAuthorizer` preserves unavailable causes and no longer relabels programming
+  bugs as authorization outages.
+- SpiceDB has a Compose healthcheck, and the missing Guava/Error Prone pins are recorded
+  in `PLAN.md` and asserted by `verify-all.sh`.
+- Frontend `callApi` rejects off-origin and non-`/api` calls before fetching; mocked cart
+  e2e remains only a UI/token-boundary smoke, not a cross-component gate proof.
+
+Cart vertical slice ACCEPTED 2026-06-18 22:46 PDT:
+
+```sh
+sh scripts/verify-cart-service.sh
+corepack pnpm run typecheck
+corepack pnpm exec vitest run src/App.test.tsx src/auth.test.ts src/architecture.test.ts
+sh scripts/verify-api-gateway.sh
+SMOKE_SKIP_DISCOVERY=1 sh authorization-server/tests/smoke.sh
+docker compose config --quiet
+sh tests/security/verify-cart-security-live.sh SEC-SPOOFED-IDENTITY-HEADERS
+sh tests/security/verify-cart-security-live.sh SEC-SCOPE-WITHOUT-RELATIONSHIP SEC-BROWSER-AUTHORIZATION-OVERWRITTEN SEC-RELATIONSHIP-REMOVAL-IMMEDIATE SEC-RELATIONSHIP-WITHOUT-SCOPE SEC-NON-COMMERCE-AUD
+E2E_CART_SKIP_UP=1 sh scripts/e2e-cart.sh
+cd frontend && E2E_FULL_STACK=1 corepack pnpm exec playwright test tests/e2e/auth.spec.ts --grep SEC-NO-BROWSER-TOKENS
+sh scripts/verify-all.sh
+```
+
+Result: PASS. Live proofs green: `SEC-NO-BROWSER-TOKENS`,
+`SEC-CART-CURRENT-USER-SPICEDB`, `SEC-SCOPE-WITHOUT-RELATIONSHIP`,
+`SEC-RELATIONSHIP-WITHOUT-SCOPE`, `SEC-NON-COMMERCE-AUD`,
+`SEC-SPOOFED-IDENTITY-HEADERS`, `SEC-BROWSER-AUTHORIZATION-OVERWRITTEN`, and
+`SEC-RELATIONSHIP-REMOVAL-IMMEDIATE`. The missing-scope case initially failed because
+Keycloak default client scopes always granted `cart:read`/`cart:write`; the realm now keeps
+`api.audience` and cart scopes optional, while Auth Service explicitly requests them in the
+normal local profile. The aggregate `verify-all.sh` remains a lightweight local gate and
+prints PENDING pointers for live-only cart checks and future services.
 
 Scaffold slice ACCEPTED 2026-06-17 18:15 — all gates green live, in a watched run:
 - `sh scripts/up.sh` — stack boots healthy (APISIX 3.16.0-debian, Keycloak 26.6.3, Valkey
@@ -211,18 +337,27 @@ Current expected proof for future slices:
 
 ## Parallel agents
 
-Not active yet. Fan-out begins after the cart vertical slice is green and the
-orchestrator has frozen the shared contracts for service agents.
+Completed 2026-06-18 cart review/fix fan-out:
+- Cart-service worker owned cart-service correctness fixes and returned green
+  `verify-cart-service.sh`.
+- Shared substrate worker owned `commerce-security-common`, SpiceDB health, and pin-table
+  fixes; returned green common verifier, static SpiceDB verifier, and Compose config.
+- Frontend worker owned `frontend/**`; returned green typecheck, focused Vitest, and
+  architecture tests.
+- Harness worker owned `tests/security/**` and `scripts/verify-all.sh`; returned green draft
+  cart security harness.
+- Explorers mapped A1-A4 live wiring and checked for missed HIGH/MED risks.
+
+No subagents are currently active. Next fan-out should wait until the cart vertical slice is
+accepted live, then split catalog/order/payment/frontend/harness by the documented ownership
+scopes.
 
 ## Blockers
 
-- Host disk tight: `/System/Volumes/Data` at 6.8 GiB free / 97% used after the SpiceDB
-  pull (2026-06-17 22:11). A full `up.sh` rebuild succeeded at 7.3 GiB earlier this
-  session, but margin is thin — an ENOSPC mid-build can brick Docker and the shell. Tear
-  the stack down (`scripts/down.sh`) when idle, and free space before the cart full-stack
-  run or any Postgres image pull.
-- Docker now has the pinned SpiceDB image locally. `docker system df` showed 2.168 GiB of
-  images and 704.5 MiB build cache after the live substrate proof.
+- Host disk tight: `/System/Volumes/Data` at 2.3 GiB free / 99% used (2026-06-18 22:46).
+  Docker build cache is currently 0B after pruning, but the local stack images/containers
+  are present. Tear down and prune after the acceptance commit; any full rebuild or Postgres
+  image pull may still hit ENOSPC.
 - Local shell has Node 24.12.0; `frontend/package.json` pins Node 26.3.0, so pnpm emits
   an engine warning until Node is switched.
 - Postgres persistence is intentionally deferred until the first cart authorization ladder
@@ -230,14 +365,19 @@ orchestrator has frozen the shared contracts for service agents.
 - Harness evidence belongs in verifier output, tests, scripts, and `PROGRESS.md`.
 - Future `scripts/agent-init.sh` and `scripts/agent-loop.sh` are intentionally deferred
   until the stack and verifier exist.
+- Remote push previously failed before the GitHub repo existed. The repo now exists per the
+  human, but the accepted cart work is not committed or pushed yet.
+- Do not run Maven-cleaning gates in parallel. `verify-all.sh` and `e2e-cart.sh` both call
+  Maven clean paths; running them concurrently caused a transient missing-class compile
+  failure that disappeared when rerun sequentially.
 
 ## Session handoff
 
-The scaffold and authorization-substrate slices are accepted. The next agent should start
-the cart vertical slice with a failing service/security case, then scaffold `cart-service`
-against the existing `commerce-security-common` primitives and SpiceDB seed data. Keep the
-four gates visible in code and traces. Do not start Postgres; cart still uses in-memory
-repositories until the ladder is proven.
+The scaffold, authorization-substrate, and cart vertical slices are accepted locally. Cart
+is not committed yet. The next agent should commit the accepted cart slice, tear down/prune
+the stack to protect disk, then start parallel fan-out under the documented service scopes.
+Keep the four gates visible in code and traces. Do not start Postgres until the next slice
+is chosen; cart still uses in-memory repositories by design.
 
 ## Session log
 
@@ -300,3 +440,62 @@ Append-only, timestamped chronology (newest at the bottom); captures non-commit 
   fake-vs-real parity green, unavailable path denies. `verify-all.sh` passed implemented
   checks; full BFF stack/domain-service `SEC-*` checks remain PENDING until cart exists.
   Stopped the SpiceDB container after verification; the image remains cached.
+- 2026-06-17 22:31 PDT — Codex — attempted to push commit `f6b62be` after adding `origin`
+  as `https://github.com/ajaygodbole7/oidc-service-reference.git`; push failed with
+  `Repository not found`. Then ran three parallel workers for the cart slice: cart-service
+  module, frontend cart UI, and draft security harness. Integrated their outputs, patched
+  cart runtime authz to use real SpiceDB instead of an in-memory fake, aligned cart response
+  shape with frontend, removed browser-visible trace details from error responses, added a
+  root Maven reactor + `scripts/verify-cart-service.sh`, and wired the draft cart security
+  harness into `verify-all.sh`. Sequential verification passed: cart reactor tests,
+  frontend typecheck, frontend App Vitest, draft security harness, and `verify-all.sh`.
+  Playwright cart e2e remains blocked in this main thread by localhost bind sandboxing and
+  the current escalation usage limit.
+- 2026-06-18 16:40 PDT — Codex — reviewed Claude's cart-slice findings and ran parallel
+  subagents for cart-service fixes, shared substrate fixes, frontend cleanup, harness cleanup,
+  A1-A4 mapping, and missed-risk review. Fixed findings B/C/D as needed: cart money/error
+  handling, long cent fields, argument-sensitive authz tests, write-denial tests, cart
+  `@NullMarked`, copy-on-store in-memory repository, cause-preserving resource authz,
+  narrower unavailable handling, graceful SpiceDB shutdown, SpiceDB healthcheck, and missing
+  Guava/Error Prone pin docs/assertions. Then implemented A1-A4 local wiring: cart-service
+  `CommercePrincipalFilter` using `CommerceJwtValidator`, cart OIDC config, actuator health,
+  Dockerfile, Keycloak `cart:read`/`cart:write` scopes, auth-service requested scopes,
+  APISIX protected cart routes, Compose cart-service, `scripts/up.sh` cart inclusion, and
+  `scripts/verify-cart-spicedb-live.sh`. Verified green: `verify-cart-service.sh`, draft cart
+  security harness, static realm smoke, APISIX render, Compose config, frontend typecheck,
+  focused frontend Vitest, `verify-cart-spicedb-live.sh` (live SpiceDB, no skipped live test),
+  and `verify-all.sh`. Stopped the temporary SpiceDB container. Cart slice remains WIP until
+  the full stack/browser/live cart `SEC-*` proofs pass; disk is only 4.7 GiB free.
+- 2026-06-18 17:37 PDT — Codex — continued with Docker Desktop up and low disk. Pruned
+  Docker builder cache, started the full local stack, and fixed the live cart path. Found
+  APISIX retained stale upstream IPs after auth/cart recreate; patched `scripts/up.sh` to
+  restart APISIX after service convergence. Added `frontend/tests/e2e/cart-live.spec.ts`
+  and `scripts/e2e-cart.sh` for live cart browser checks. First run exposed `/api/cart`
+  401s: APISIX was reaching cart-service without a valid service subject. Fixed protected
+  cart routes to attach `bff-session` directly, then found Keycloak access tokens lacked
+  `sub`; patched the realm to emit stable local `sub` from user `commerce_sub` and added
+  static smoke checks. Recreated Keycloak to re-import the realm. Verified green:
+  `SEC-NO-BROWSER-TOKENS`, `SEC-CART-CURRENT-USER-SPICEDB`,
+  `SEC-SCOPE-WITHOUT-RELATIONSHIP`, `verify-cart-service.sh`,
+  `verify-cart-spicedb-live.sh`, `E2E_CART_SKIP_UP=1 sh scripts/e2e-cart.sh`, and
+  sequential `verify-all.sh`. A transient parallel `verify-all.sh`/`e2e-cart.sh` Maven
+  collision failed once; rerun sequentially passed.
+- 2026-06-18 22:48 PDT — Codex — integrated the live cart security fixture work and accepted
+  the cart vertical slice locally. Removed unadopted design-note files, added root
+  `.dockerignore` to keep repo-root Docker contexts small, and kept Docker build cache pruned
+  while disk stayed near-full. Added local/test-only cart relationship/evidence fixtures,
+  live cart security verifier, APISIX protected `/api/_test/cart/*` route stripped from
+  production-intent renders, SpiceDB relationship touch/delete adapter support, and Playwright
+  cases for spoofed headers, browser bearer overwrite, immediate relationship removal,
+  missing scope, and non-commerce audience. Found the missing-scope fixture initially failed
+  because Keycloak default client scopes always granted cart/audience scopes; moved
+  `api.audience`, `cart:read`, and `cart:write` to optional client scopes and kept Auth
+  Service requesting them in the normal local profile. Verified green: cart-service Maven
+  reactor, frontend typecheck, focused Vitest (33 tests), API gateway verifier, Keycloak
+  smoke, `docker compose config --quiet`, `SEC-NO-BROWSER-TOKENS`,
+  `SEC-CART-CURRENT-USER-SPICEDB`, `SEC-SCOPE-WITHOUT-RELATIONSHIP`,
+  `SEC-RELATIONSHIP-WITHOUT-SCOPE`, `SEC-NON-COMMERCE-AUD`,
+  `SEC-SPOOFED-IDENTITY-HEADERS`, `SEC-BROWSER-AUTHORIZATION-OVERWRITTEN`,
+  `SEC-RELATIONSHIP-REMOVAL-IMMEDIATE`, `E2E_CART_SKIP_UP=1 sh scripts/e2e-cart.sh`, and
+  `sh scripts/verify-all.sh`. Docker build cache is 0B; stack is still running until the
+  acceptance commit/teardown step.

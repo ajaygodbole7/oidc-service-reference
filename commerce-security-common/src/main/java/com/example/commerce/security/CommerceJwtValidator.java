@@ -55,9 +55,10 @@ public final class CommerceJwtValidator {
     p.setJWSKeySelector(new JWSVerificationKeySelector<>(RS256, jwks));
     p.setJWSTypeVerifier(new DefaultJOSEObjectTypeVerifier<>(Set.of(JOSEObjectType.JWT, AT_JWT)));
     p.setJWTClaimsSetVerifier(new DefaultJWTClaimsVerifier<>(
-        audience,
+        Set.of(audience),
         new JWTClaimsSet.Builder().issuer(issuer).build(),
-        Set.of("sub", "exp")));
+        Set.of("sub", "exp"),
+        Set.of()));
     this.processor = p;
   }
 

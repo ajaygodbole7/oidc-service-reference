@@ -49,6 +49,18 @@ describe("BFF auth client", () => {
     });
   });
 
+  it("rejects off-origin and non-/api paths without fetching", async () => {
+    const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(
+      Response.json({ ok: true })
+    );
+
+    await expect(callApi("https://evil.example/api/cart")).rejects.toThrow(
+      "same-origin /api path"
+    );
+    await expect(callApi("/auth/me")).rejects.toThrow("same-origin /api path");
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it("POST attaches X-XSRF-TOKEN equal to the XSRF-TOKEN cookie and JSON-encodes an object body", async () => {
     document.cookie = "XSRF-TOKEN=csrf-abc";
     const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(

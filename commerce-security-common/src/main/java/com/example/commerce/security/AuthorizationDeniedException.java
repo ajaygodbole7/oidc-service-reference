@@ -13,6 +13,11 @@ public final class AuthorizationDeniedException extends RuntimeException {
     this.trace = trace;
   }
 
+  public AuthorizationDeniedException(String message, DecisionTrace trace, Throwable cause) {
+    super(message, cause);
+    this.trace = trace;
+  }
+
   public DecisionTrace trace() {
     return trace;
   }

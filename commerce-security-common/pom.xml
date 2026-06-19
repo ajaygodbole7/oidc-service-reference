@@ -108,6 +108,9 @@
             <requireJavaVersion>
               <version>[26,)</version>
             </requireJavaVersion>
+            <requireMavenVersion>
+              <version>[3.9.6,)</version>
+            </requireMavenVersion>
             <dependencyConvergence/>
             <bannedDependencies>
               <excludes>

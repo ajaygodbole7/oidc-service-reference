@@ -71,21 +71,37 @@ class AuthorizerPrimitivesTest {
   }
 
   @Test
-  void resource_authorizer_fails_closed_when_client_unavailable() {
+  void resource_authorizer_fails_closed_when_client_unavailable_and_preserves_cause() {
+    RuntimeException grpcFailure = new RuntimeException("connection refused");
     AuthorizationClient unavailable = (subject, resource, permission) -> {
-      throw new AuthorizationUnavailableException("SpiceDB unavailable");
+      throw new AuthorizationUnavailableException("SpiceDB unavailable", grpcFailure);
     };
 
     assertThatThrownBy(() -> new ResourceAuthorizer(unavailable)
         .requireAllowed(ALICE, CART, new Permission("read")))
         .isInstanceOf(AuthorizationDeniedException.class)
         .hasMessageContaining("unavailable")
-        .extracting("trace")
-        .satisfies(trace -> {
-          DecisionTrace decision = (DecisionTrace) trace;
+        .satisfies(thrown -> {
+          assertThat(thrown)
+              .hasCauseInstanceOf(AuthorizationUnavailableException.class);
+          assertThat(thrown.getCause())
+              .hasCause(grpcFailure);
+          DecisionTrace decision = ((AuthorizationDeniedException) thrown).trace();
           assertThat(decision.allowed()).isFalse();
           assertThat(decision.reason()).isEqualTo("authorization_unavailable");
         });
+  }
+
+  @Test
+  void resource_authorizer_does_not_relabel_programming_bugs_as_unavailable() {
+    AuthorizationClient buggy = (subject, resource, permission) -> {
+      throw new IllegalStateException("mapping bug");
+    };
+
+    assertThatThrownBy(() -> new ResourceAuthorizer(buggy)
+        .requireAllowed(ALICE, CART, new Permission("read")))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("mapping bug");
   }
 
   @Test

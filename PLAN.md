@@ -206,6 +206,8 @@ scaffold:
 | ReBAC | SpiceDB image | `ghcr.io/authzed/spicedb:v1.53.0` |
 | ReBAC Java client | Authzed Java SDK | `1.6.0` |
 | ReBAC Java client | gRPC Java | `1.72.0` |
+| ReBAC Java client | Guava | `33.5.0-jre` |
+| ReBAC Java client | Error Prone annotations | `2.42.0` |
 | Domain persistence | Postgres image | `postgres:18.4` |
 | Domain persistence | PostgreSQL JDBC driver | `42.7.11` |
 | Domain persistence | Flyway | `12.8.1` |

@@ -26,6 +26,13 @@ fi
 grep -F -q "/internal/resolve" "$plugin_lua" \
   || fail "$plugin_lua missing the /internal/resolve back-channel call"
 
+grep -F -q "# >>> test-only routes" "$apisix_yaml" \
+  || fail "$apisix_yaml missing test-only route marker"
+grep -F -q "/api/_test/cart/*" "$apisix_yaml" \
+  || fail "$apisix_yaml missing local/test-only protected cart harness route"
+grep -A8 -F "uri: /api/_test/cart/*" "$apisix_yaml" | grep -F -q "bff-session:" \
+  || fail "$apisix_yaml cart harness route must use bff-session"
+
 sh api-gateway/tests/test-lua-unit.sh || fail "Lua unit/parity tests failed"
 
 DEV_GW='LOCAL_DEV_GATEWAY_CLIENT_SECRET__CHANGE_BEFORE_DEPLOY'
@@ -64,5 +71,18 @@ assert_render_rc "allows real secrets under prod flag" ne 3 \
   REQUIRE_NONDEV_SECRETS=1 GATEWAY_CLIENT_SECRET="$REAL_GW" CSRF_SIGNING_KEY="$REAL_CSRF"
 assert_render_rc "dev path unaffected" ne 3 \
   GATEWAY_CLIENT_SECRET="$DEV_GW" CSRF_SIGNING_KEY="$DEV_CSRF"
+
+env GATEWAY_CLIENT_SECRET="$DEV_GW" CSRF_SIGNING_KEY="$DEV_CSRF" \
+  sh scripts/render-apisix-config.sh >/dev/null 2>&1 \
+  || fail "local render failed"
+grep -F -q "/api/_test/cart/*" "$render_local" \
+  || fail "local render stripped cart harness route"
+
+env REQUIRE_NONDEV_SECRETS=1 GATEWAY_CLIENT_SECRET="$REAL_GW" CSRF_SIGNING_KEY="$REAL_CSRF" \
+  sh scripts/render-apisix-config.sh >/dev/null 2>&1 \
+  || fail "production-intent render failed"
+if grep -F -q "/api/_test/cart/*" "$render_local"; then
+  fail "production-intent render kept cart harness route"
+fi
 
 echo "api-gateway verification passed"

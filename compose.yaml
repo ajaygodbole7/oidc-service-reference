@@ -5,9 +5,8 @@ name: oidc-service-reference
 #   - http://127.0.0.1:9080  -> APISIX gateway for /auth/*
 #   - http://127.0.0.1:8080  -> Keycloak realm discovery/login
 #
-# Domain services and Postgres are added in later slices. This local stack proves the
-# Auth Service, gateway, Keycloak realm, Valkey session store, SpiceDB substrate, and
-# frontend shell can stand up without exposing tokens to the browser.
+# Cart is the first domain service. Postgres is added in a later slice after the
+# cart authorization ladder is proven with in-memory repositories.
 
 services:
   keycloak:
@@ -62,6 +61,12 @@ services:
       - "127.0.0.1:8443:8443"
     networks:
       - oidc-internal
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/grpc_health_probe", "-addr=127.0.0.1:50051"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
 
   auth-service:
     build:
@@ -82,7 +87,7 @@ services:
       SPRING_PROFILES_ACTIVE: ${AUTH_SERVICE_SPRING_PROFILES_ACTIVE:-local}
       AUTH_CLIENT_ID: ${AUTH_CLIENT_ID:-commerce-auth}
       AUTH_CLIENT_SECRET: ${AUTH_CLIENT_SECRET:-LOCAL_DEV_AUTH_CLIENT_SECRET__CHANGE_BEFORE_DEPLOY}
-      OIDC_SCOPES: ${OIDC_SCOPES:-openid,profile,email,roles,api.audience,api.read}
+      OIDC_SCOPES: ${OIDC_SCOPES:-openid,profile,email,roles,api.audience,api.read,cart:read,cart:write}
       OIDC_ROLES_CLAIM_PATH: ${OIDC_ROLES_CLAIM_PATH:-realm_access,roles}
       APP_REFRESH_REQUIRE_ROTATION: ${APP_REFRESH_REQUIRE_ROTATION:-true}
       GATEWAY_CLIENT_ID: ${GATEWAY_CLIENT_ID:-commerce-api-gateway}
@@ -103,12 +108,43 @@ services:
       retries: 18
       start_period: 30s
 
+  cart-service:
+    build:
+      context: .
+      dockerfile: cart-service/Dockerfile
+    environment:
+      SERVER_PORT: 8083
+      MANAGEMENT_PORT: 9083
+      MANAGEMENT_ADDRESS: 127.0.0.1
+      CART_OIDC_ISSUER_URI: http://localhost:8080/realms/oidc-service-reference
+      CART_OIDC_AUDIENCE: commerce-api
+      CART_OIDC_JWKS_URI: http://keycloak:8080/realms/oidc-service-reference/protocol/openid-connect/certs
+      CART_SPICEDB_TARGET: spicedb:50051
+      CART_SPICEDB_PRESHARED_KEY: ${SPICEDB_PRESHARED_KEY:-LOCAL_DEV_SPICEDB_PRESHARED_KEY__CHANGE_BEFORE_DEPLOY}
+      CART_SPICEDB_PLAINTEXT: "true"
+      SPRING_PROFILES_ACTIVE: ${CART_SERVICE_SPRING_PROFILES_ACTIVE:-local}
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      spicedb:
+        condition: service_healthy
+    networks:
+      - oidc-internal
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9083/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 30s
+
   apisix:
     image: apache/apisix:3.16.0-debian
     depends_on:
       keycloak:
         condition: service_healthy
       auth-service:
+        condition: service_healthy
+      cart-service:
         condition: service_healthy
     environment:
       APISIX_STAND_ALONE: "true"

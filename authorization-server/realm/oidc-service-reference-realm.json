@@ -29,6 +29,9 @@
       "firstName": "Alice",
       "lastName": "Reference",
       "email": "alice@example.test",
+      "attributes": {
+        "commerce_sub": ["alice"]
+      },
       "credentials": [
         { "type": "password", "value": "alice", "temporary": false }
       ],
@@ -41,6 +44,9 @@
       "firstName": "Admin",
       "lastName": "Reference",
       "email": "admin@example.test",
+      "attributes": {
+        "commerce_sub": ["admin"]
+      },
       "credentials": [
         { "type": "password", "value": "admin", "temporary": false }
       ],
@@ -57,6 +63,20 @@
         "display.on.consent.screen": "true"
       },
       "protocolMappers": [
+        {
+          "name": "stable commerce subject",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "commerce_sub",
+            "claim.name": "sub",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
         {
           "name": "username",
           "protocol": "openid-connect",
@@ -189,6 +209,24 @@
       }
     },
     {
+      "name": "cart:read",
+      "description": "Read the caller's cart resources.",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "cart:write",
+      "description": "Mutate the caller's cart resources.",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
       "name": "admin.read",
       "description": "Admin-scoped API read.",
       "protocol": "openid-connect",
@@ -286,10 +324,9 @@
         "profile",
         "email",
         "roles",
-        "api.audience",
         "api.read"
       ],
-      "optionalClientScopes": ["api.write", "admin.read"]
+      "optionalClientScopes": ["api.audience", "cart:read", "cart:write", "api.write", "admin.read"]
     },
     {
       "clientId": "commerce-api-gateway",

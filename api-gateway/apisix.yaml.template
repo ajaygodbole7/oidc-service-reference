@@ -1,8 +1,8 @@
 #
 # APISIX route table — standalone mode. TEMPLATE FILE.
 #
-# First scaffold slice: browser-facing /auth/* passthrough only.
-# Domain /api/** routes are added when catalog/cart/order services exist.
+# Browser-facing /auth/* passthrough plus explicit protected cart API routes.
+# Domain /api/** routes are allowlisted one path at a time as services exist.
 # Unknown /api/** paths therefore match no route and fail closed.
 #
 # Render with:
@@ -13,14 +13,18 @@ upstreams:
     type: roundrobin
     nodes:
       "auth-service:8081": 1
+  - id: cart-service
+    type: roundrobin
+    nodes:
+      "cart-service:8083": 1
 
-plugin_configs:
-  # Declared now so the gateway's copied bff-session plugin and secret rendering
-  # path are present in the scaffold. Protected /api/** routes will reference
-  # this config in later slices.
-  - id: bff-session-api
+routes:
+  - id: api-cart-current
+    uri: /api/cart
+    methods: [GET]
+    upstream_id: cart-service
     plugins:
-      bff-session:
+      bff-session: &bff-session-api
         auth_service_base: http://auth-service:8081
         idp_token_url: ${APISIX_IDP_TOKEN_URL}
         gateway_client_id: ${GATEWAY_CLIENT_ID}
@@ -28,7 +32,36 @@ plugin_configs:
         cookie_signing_key: ${CSRF_SIGNING_KEY}
         allow_insecure_sid: true
 
-routes:
+  - id: api-cart-add-item
+    uri: /api/cart/items
+    methods: [POST]
+    upstream_id: cart-service
+    plugins:
+      bff-session: *bff-session-api
+
+  - id: api-cart-remove-item
+    uri: /api/cart/items/*
+    methods: [DELETE]
+    upstream_id: cart-service
+    plugins:
+      bff-session: *bff-session-api
+
+  - id: api-cart-by-id
+    uri: /api/carts/*
+    methods: [GET]
+    upstream_id: cart-service
+    plugins:
+      bff-session: *bff-session-api
+
+  # >>> test-only routes
+  - id: api-test-cart-harness
+    uri: /api/_test/cart/*
+    methods: [GET, POST, PUT, PATCH, DELETE]
+    upstream_id: cart-service
+    plugins:
+      bff-session: *bff-session-api
+  # <<< test-only routes
+
   - id: auth-login
     uri: /auth/login
     methods: [GET]

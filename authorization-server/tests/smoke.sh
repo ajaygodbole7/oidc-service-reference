@@ -75,6 +75,10 @@ assert(admin && admin.enabled === true, "missing enabled admin user");
 assert((alice.realmRoles || []).includes("user"), "alice must have user role");
 assert((admin.realmRoles || []).includes("user"), "admin must have user role");
 assert((admin.realmRoles || []).includes("admin"), "admin must have admin role");
+assert(((alice.attributes || {}).commerce_sub || []).includes("alice"),
+       "alice must have stable commerce_sub for local SpiceDB relationships");
+assert(((admin.attributes || {}).commerce_sub || []).includes("admin"),
+       "admin must have stable commerce_sub for local SpiceDB relationships");
 
 assert(auth, "missing Auth Service client (commerce-auth)");
 assert(auth.publicClient === false, "Auth Service client must be confidential");
@@ -93,10 +97,15 @@ assert(auth.redirectUris.includes("http://127.0.0.1:9080/auth/callback/idp"),
        "Auth Service redirect URI must include APISIX origin for gateway-level login/refresh harnesses");
 assert(Array.isArray(auth.webOrigins) && auth.webOrigins.length === 0,
        "Auth Service webOrigins must be empty (browser never calls Keycloak from JS)");
-for (const scope of ["openid", "profile", "email", "roles", "api.audience", "api.read"]) {
+for (const scope of ["openid", "profile", "email", "roles", "api.read"]) {
   assert(auth.defaultClientScopes.includes(scope), `Auth Service default scopes must include ${scope}`);
 }
-for (const scope of ["api.write", "admin.read"]) {
+for (const scope of ["cart:read", "cart:write"]) {
+  assert(scopes.has(scope), `missing ${scope} client scope`);
+  assert(scopes.get(scope).attributes["include.in.token.scope"] === "true",
+         `${scope} must be emitted in the access-token scope claim`);
+}
+for (const scope of ["api.audience", "cart:read", "cart:write", "api.write", "admin.read"]) {
   assert((auth.optionalClientScopes || []).includes(scope), `Auth Service optional scopes must include ${scope}`);
 }
 
@@ -143,6 +152,19 @@ assert(audMapper.config["access.token.claim"] === "true",
        "audience mapper must add to access token");
 
 assert(rolesScope, "missing roles client scope");
+const subjectMapper = ((scopes.get("profile") || {}).protocolMappers || []).find(
+  (m) => m.config && m.config["claim.name"] === "sub"
+);
+assert(subjectMapper, "profile scope must map stable commerce subject to sub");
+assert(subjectMapper.protocolMapper === "oidc-usermodel-attribute-mapper",
+       "sub mapper must read the stable commerce_sub user attribute");
+assert(subjectMapper.config["user.attribute"] === "commerce_sub",
+       "sub mapper must read commerce_sub");
+assert(subjectMapper.config["access.token.claim"] === "true",
+       "sub mapper must add sub to the access token");
+assert(subjectMapper.config["id.token.claim"] === "true",
+       "sub mapper must add sub to the ID token");
+
 const realmRoleMapper = (rolesScope.protocolMappers || []).find(
   (m) => m.protocolMapper === "oidc-usermodel-realm-role-mapper"
 );

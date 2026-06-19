@@ -9,6 +9,10 @@ body {
   margin: 0;
 }
 
+a {
+  color: inherit;
+}
+
 button {
   border: 0;
   border-radius: 6px;
@@ -21,14 +25,46 @@ button {
 }
 
 .app-shell {
-  align-items: center;
+  align-items: flex-start;
   display: flex;
   min-height: 100vh;
-  padding: 2rem;
+  padding: 3rem 2rem;
 }
 
-.auth-panel {
-  max-width: 42rem;
+.commerce-panel {
+  margin: 0 auto;
+  max-width: 58rem;
+  width: 100%;
+}
+
+.commerce-header {
+  align-items: flex-start;
+  border-bottom: 1px solid #d8dee8;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1.25rem;
+}
+
+.commerce-header h1 {
+  font-size: 2.75rem;
+  line-height: 1;
+  margin: 0;
+}
+
+.muted {
+  color: #596579;
+}
+
+.button-link {
+  background: #176b5d;
+  border-radius: 6px;
+  color: white;
+  display: inline-flex;
+  font-weight: 700;
+  padding: 0.7rem 1rem;
+  text-decoration: none;
 }
 
 .eyebrow {
@@ -39,3 +75,98 @@ button {
   text-transform: uppercase;
 }
 
+.cart-state {
+  background: white;
+  border: 1px solid #d8dee8;
+  border-radius: 8px;
+  padding: 1.25rem;
+}
+
+.cart-state h2 {
+  font-size: 1.25rem;
+  margin: 0 0 0.5rem;
+}
+
+.cart-state p {
+  color: #596579;
+  margin: 0 0 1rem;
+}
+
+.cart-grid {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: minmax(0, 1fr) 18rem;
+}
+
+.cart-items {
+  display: grid;
+  gap: 0.75rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cart-item {
+  align-items: center;
+  background: white;
+  border: 1px solid #d8dee8;
+  border-radius: 8px;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 1rem;
+}
+
+.cart-item p {
+  color: #596579;
+  margin: 0.35rem 0 0;
+}
+
+.cart-summary {
+  align-self: start;
+  background: #ffffff;
+  border: 1px solid #d8dee8;
+  border-radius: 8px;
+  margin: 0;
+  padding: 1rem;
+}
+
+.cart-summary div {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+}
+
+.cart-summary dt {
+  color: #596579;
+}
+
+.cart-summary dd {
+  font-weight: 700;
+  margin: 0;
+}
+
+.cart-summary .total-row {
+  border-top: 1px solid #d8dee8;
+  margin-top: 0.5rem;
+  padding-top: 1rem;
+}
+
+@media (max-width: 760px) {
+  .app-shell {
+    padding: 1.25rem;
+  }
+
+  .commerce-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .commerce-header h1 {
+    font-size: 2.25rem;
+  }
+
+  .cart-grid {
+    grid-template-columns: 1fr;
+  }
+}

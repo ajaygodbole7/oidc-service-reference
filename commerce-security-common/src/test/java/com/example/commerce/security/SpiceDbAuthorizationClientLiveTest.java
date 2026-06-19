@@ -68,6 +68,25 @@ class SpiceDbAuthorizationClientLiveTest {
     }
   }
 
+  @Test
+  void relationship_delete_and_touch_are_fully_consistent() throws Exception {
+    assumeTrue(Boolean.parseBoolean(System.getenv("SPICEDB_LIVE_TEST")),
+        "set SPICEDB_LIVE_TEST=true to run against local SpiceDB");
+
+    seedSpiceDb();
+
+    try (SpiceDbAuthorizationClient real =
+        new SpiceDbAuthorizationClient(TARGET, PRESHARED_KEY, true, 2_000)) {
+      assertThat(real.check(SubjectRef.user("alice"), ALICE_CART, READ).allowed()).isTrue();
+
+      real.deleteRelationship(ALICE_CART, "owner", SubjectRef.user("alice"));
+      assertThat(real.check(SubjectRef.user("alice"), ALICE_CART, READ).allowed()).isFalse();
+
+      real.touchRelationship(ALICE_CART, "owner", SubjectRef.user("alice"));
+      assertThat(real.check(SubjectRef.user("alice"), ALICE_CART, READ).allowed()).isTrue();
+    }
+  }
+
   private static void seedSpiceDb() throws IOException {
     ManagedChannel channel = ManagedChannelBuilder.forTarget(TARGET).usePlaintext().build();
     try {

@@ -8,8 +8,8 @@
 # JRE-only layer with a non-root user and curl present so Compose can run
 # its healthcheck against /actuator/health.
 #
-# Base image note: we pin eclipse-temurin:26-jdk-jammy / 25-jre-jammy.
-# An alpine 25 JRE tag is not consistently published yet, so jammy is the
+# Base image note: we pin eclipse-temurin:26-jdk-jammy / 26-jre-jammy.
+# An alpine 26 JRE tag is not consistently published yet, so jammy is the
 # safe, reproducible choice (glibc + apt for installing curl).
 
 # ── Build stage ───────────────────────────────────────────────────────────
