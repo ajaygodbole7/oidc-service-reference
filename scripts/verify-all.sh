@@ -76,6 +76,7 @@ sh scripts/verify-commerce-security-common.sh
 sh scripts/verify-spicedb-static.sh
 sh scripts/verify-cart-service.sh
 sh tests/security/verify-cart-security-draft.sh
+sh tests/security/verify-catalog-security-draft.sh
 
 if command -v docker >/dev/null 2>&1; then
   if docker compose ps >/tmp/oidc-service-reference-compose-ps.out 2>/dev/null; then
@@ -101,7 +102,7 @@ fi
 
 pending SEC-NO-BROWSER-TOKENS "requires live auth flow through APISIX and frontend"
 pending SEC-NON-COMMERCE-AUD "run sh tests/security/verify-cart-security-live.sh SEC-NON-COMMERCE-AUD for the local auth-service audience fixture"
-pending SEC-CATALOG-ANONYMOUS-READ-ONLY "requires catalog service"
+pending SEC-CATALOG-ANONYMOUS-READ-ONLY "run sh tests/security/verify-catalog-security-live.sh SEC-CATALOG-ANONYMOUS-READ-ONLY after catalog-service exists; anonymous GET list/detail must pass, anonymous POST/PATCH must deny, merchant writes must require catalog:write plus store:main#manage"
 pending SEC-SCOPE-WITHOUT-RELATIONSHIP "run sh tests/security/verify-cart-security-live.sh SEC-SCOPE-WITHOUT-RELATIONSHIP for the live cross-user cart request"
 pending SEC-RELATIONSHIP-WITHOUT-SCOPE "run sh tests/security/verify-cart-security-live.sh SEC-RELATIONSHIP-WITHOUT-SCOPE for the local missing-scope fixture"
 pending SEC-OWNERSHIP-PROVISIONED-FOR-CALLER "run sh tests/security/verify-cart-security-live.sh SEC-OWNERSHIP-PROVISIONED-FOR-CALLER for dynamic cart ownership provisioning"

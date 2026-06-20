@@ -39,7 +39,7 @@ app:
   # value survives into a "prod" / "production" profile.
   client-secret: ${AUTH_CLIENT_SECRET:LOCAL_DEV_AUTH_CLIENT_SECRET__CHANGE_BEFORE_DEPLOY}
   oauth-registration-id: idp
-  scopes: ${OIDC_SCOPES:openid,profile,email,roles,api.audience,api.read,cart:read,cart:write}
+  scopes: ${OIDC_SCOPES:openid,profile,email,roles,api.audience,api.read,cart:read,cart:write,catalog:write}
   # Path through the ID-token claims to the user's roles array. Different
   # IdPs put roles in different shapes — see docs/operations/provider-adapters.md for the
   # matrix. Default targets Keycloak's realm_access.roles. Swapping IdPs is

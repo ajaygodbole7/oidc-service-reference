@@ -51,6 +51,21 @@
         { "type": "password", "value": "admin", "temporary": false }
       ],
       "realmRoles": ["user", "admin"]
+    },
+    {
+      "username": "merchant",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Merchant",
+      "lastName": "Reference",
+      "email": "merchant@example.test",
+      "attributes": {
+        "commerce_sub": ["merchant"]
+      },
+      "credentials": [
+        { "type": "password", "value": "merchant", "temporary": false }
+      ],
+      "realmRoles": ["user"]
     }
   ],
   "clientScopes": [
@@ -227,6 +242,15 @@
       }
     },
     {
+      "name": "catalog:write",
+      "description": "Create or update catalog products (merchant).",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
       "name": "admin.read",
       "description": "Admin-scoped API read.",
       "protocol": "openid-connect",
@@ -326,7 +350,7 @@
         "roles",
         "api.read"
       ],
-      "optionalClientScopes": ["api.audience", "cart:read", "cart:write", "api.write", "admin.read"]
+      "optionalClientScopes": ["api.audience", "cart:read", "cart:write", "catalog:write", "api.write", "admin.read"]
     },
     {
       "clientId": "commerce-api-gateway",

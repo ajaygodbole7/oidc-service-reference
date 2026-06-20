@@ -17,6 +17,10 @@ upstreams:
     type: roundrobin
     nodes:
       "cart-service:8083": 1
+  - id: catalog-service
+    type: roundrobin
+    nodes:
+      "catalog-service:8084": 1
 
 routes:
   - id: api-cart-current
@@ -61,6 +65,30 @@ routes:
     plugins:
       bff-session: *bff-session-api
   # <<< test-only routes
+
+  # Catalog: GET list/detail are auth-optional (anonymous browsing) — NO bff-session,
+  # so no session is required and catalog-service sees no bearer (treats caller as
+  # anonymous). Writes go through the full bff-session ladder like cart.
+  - id: api-catalog-list
+    uri: /api/catalog/products
+    methods: [GET]
+    upstream_id: catalog-service
+  - id: api-catalog-detail
+    uri: /api/catalog/products/*
+    methods: [GET]
+    upstream_id: catalog-service
+  - id: api-catalog-create
+    uri: /api/catalog/products
+    methods: [POST]
+    upstream_id: catalog-service
+    plugins:
+      bff-session: *bff-session-api
+  - id: api-catalog-update
+    uri: /api/catalog/products/*
+    methods: [PATCH]
+    upstream_id: catalog-service
+    plugins:
+      bff-session: *bff-session-api
 
   - id: auth-login
     uri: /auth/login

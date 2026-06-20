@@ -546,3 +546,24 @@ Append-only, timestamped chronology (newest at the bottom); captures non-commit 
   SEC-OWNERSHIP-PROVISIONED-FOR-CALLER SEC-NO-RESOURCE-HIJACK
   SEC-PROVISIONING-FAILS-CLOSED`. Pruned Docker builder cache after rebuild; disk remains
   critically low at about 1.7 GiB free.
+- 2026-06-19 21:05 PDT — Claude — catalog vertical slice WIRED + live 2/3; NOT yet accepted
+  (blocked by host disk). The catalog-service module (domain/service/web on the four-gate
+  ladder) came from Codex workers and is green: 15 module tests + 23 commerce-security-common
+  tests. Wired the orchestrator-owned shared contracts: APISIX catalog routes (GET list/detail
+  auth-optional with NO `bff-session` for anonymous browsing; POST/PATCH through the full
+  `bff-session` ladder), catalog-service in compose + APISIX `depends_on`, `catalog:write`
+  realm client scope (optional, Auth Service requests it), a `merchant` Keycloak user
+  (`commerce_sub=merchant`) backing the seeded `store:main#manager@user:merchant`, the
+  catalog Dockerfile, and the live SEC harness (`tests/security/verify-catalog-security-live.sh`
+  + `frontend/tests/e2e/catalog-live.spec.ts`). Found and fixed two real bugs live: (1) adding
+  catalog-service to the root reactor broke BOTH cart-service and catalog-service Dockerfiles —
+  each copied only its own module POM, so Maven could not parse the reactor; both now copy all
+  module POMs. (2) The catalog runner never seeded SpiceDB, so the merchant write failed gate 4;
+  the runner now seeds SpiceDB before the tests. Live `SEC-CATALOG-ANONYMOUS-READ-ONLY`: anon
+  read 200, anon write deny, and non-merchant (alice) write 403 PASS live through the gateway;
+  merchant write (gate-4 `store:main#manage`) is unit-validated (`CatalogApplicationServiceTest`)
+  and the seed fix is in place, but the live re-validation is BLOCKED by host disk — the running
+  7-container stack consumes GiB while up; free space fell to ~0.5 GiB and a re-run would
+  ENOSPC-brick. Committed as a WIP checkpoint, NOT accepted. Next: free host disk to ~6-7 GiB
+  (or compact the Docker Desktop disk image), then `sh tests/security/verify-catalog-security-live.sh`
+  to confirm the merchant case green and convert to an acceptance commit.

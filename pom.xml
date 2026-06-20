@@ -13,5 +13,6 @@
   <modules>
     <module>commerce-security-common</module>
     <module>cart-service</module>
+    <module>catalog-service</module>
   </modules>
 </project>

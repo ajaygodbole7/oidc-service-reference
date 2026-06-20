@@ -23,14 +23,31 @@ const cartFixture = {
   totalCents: 2812
 };
 
+const catalogFixture = {
+  products: [
+    {
+      id: "prod-pack",
+      name: "Camp Pantry Pack",
+      description: "Shelf-stable staples for a weekend away.",
+      priceCents: 4299,
+      currency: "USD",
+      inventoryStatus: "in_stock"
+    }
+  ]
+};
+
 test("cart shows the login prompt for anonymous users", async ({ page }) => {
   await page.route("**/auth/me", async (route) => {
     await route.fulfill({ status: 401 });
   });
+  await page.route("**/api/catalog/products", async (route) => {
+    await route.fulfill({ json: catalogFixture });
+  });
 
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "Cart", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Catalog", exact: true })).toBeVisible();
+  await expect(page.getByText("Camp Pantry Pack")).toBeVisible();
   await expect(page.getByRole("link", { name: "Sign in" })).toHaveAttribute(
     "href",
     `/auth/login?return_to=${encodeURIComponent("/")}`
@@ -40,6 +57,9 @@ test("cart shows the login prompt for anonymous users", async ({ page }) => {
 test("cart renders same-origin cart data", async ({ page }) => {
   await page.route("**/auth/me", async (route) => {
     await route.fulfill({ json: aliceClaims });
+  });
+  await page.route("**/api/catalog/products", async (route) => {
+    await route.fulfill({ json: catalogFixture });
   });
   await page.route("**/api/cart", async (route) => {
     await route.fulfill({ json: cartFixture });
@@ -54,6 +74,9 @@ test("cart renders same-origin cart data", async ({ page }) => {
 test("cart renders empty and error states", async ({ page }) => {
   await page.route("**/auth/me", async (route) => {
     await route.fulfill({ json: aliceClaims });
+  });
+  await page.route("**/api/catalog/products", async (route) => {
+    await route.fulfill({ json: catalogFixture });
   });
   await page.route("**/api/cart", async (route) => {
     await route.fulfill({

@@ -50,6 +50,27 @@ const cartFixture = {
   totalCents: 5410
 };
 
+const catalogFixture = {
+  products: [
+    {
+      id: "prod-coffee",
+      name: "Trail Blend",
+      description: "Small-batch beans roasted for early starts and late deploys.",
+      priceCents: 1299,
+      currency: "USD",
+      inventoryStatus: "in_stock"
+    },
+    {
+      id: "prod-mug",
+      name: "Market Tote",
+      description: "Keeps coffee hot through the whole checkout path.",
+      priceCents: 2400,
+      currency: "USD",
+      inventoryStatus: "low_stock"
+    }
+  ]
+};
+
 describe("App", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -57,21 +78,26 @@ describe("App", () => {
 
   it("renders a loading state while identity is loading", () => {
     setupFetch({
-      "/auth/me": () => new Promise<Response>(() => undefined)
+      "/auth/me": () => new Promise<Response>(() => undefined),
+      "/api/catalog/products": () => new Promise<Response>(() => undefined)
     });
 
     render(<App />);
 
-    expect(screen.getByText(/loading cart/i)).toBeInTheDocument();
+    expect(screen.getByText(/checking session/i)).toBeInTheDocument();
   });
 
-  it("renders the anonymous sign-in entry when /auth/me returns 401", async () => {
+  it("renders anonymous catalog browsing and the sign-in entry when /auth/me returns 401", async () => {
     setupFetch({
-      "/auth/me": () => new Response(null, { status: 401 })
+      "/auth/me": () => new Response(null, { status: 401 }),
+      "/api/catalog/products": () => Response.json(catalogFixture)
     });
 
     render(<App />);
 
+    expect(await screen.findByRole("heading", { name: "Catalog" })).toBeInTheDocument();
+    expect(await screen.findByText("Trail Blend")).toBeInTheDocument();
+    expect(screen.getByText("Market Tote")).toBeInTheDocument();
     expect(await screen.findByRole("link", { name: /sign in/i })).toBeInTheDocument();
     // Per return-to-login contract: a bare `/auth/login` link is forbidden.
     // The Sign in link must include `return_to=<current route>`. jsdom's
@@ -87,17 +113,26 @@ describe("App", () => {
   it("renders a loaded cart from same-origin /api/cart", async () => {
     const fetchSpy = setupFetch({
       "/auth/me": () => Response.json(aliceClaims),
+      "/api/catalog/products": () => Response.json(catalogFixture),
       "/api/cart": () => Response.json(cartFixture)
     });
 
     render(<App />);
 
     expect(await screen.findByText(/signed in as/i)).toBeInTheDocument();
-    expect(await screen.findByText("Trail Coffee")).toBeInTheDocument();
+    expect(await screen.findByText("Trail Blend")).toBeInTheDocument();
     expect(screen.getByText("Insulated Mug")).toBeInTheDocument();
     expect(screen.getByText("Subtotal")).toBeInTheDocument();
     expect(screen.getByText("$54.10")).toBeInTheDocument();
-    expect(fetchSpy).toHaveBeenLastCalledWith(
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "/api/catalog/products",
+      expect.objectContaining({
+        credentials: "include",
+        headers: { Accept: "application/json" },
+        signal: expect.any(AbortSignal) as AbortSignal
+      })
+    );
+    expect(fetchSpy).toHaveBeenCalledWith(
       "/api/cart",
       expect.objectContaining({
         credentials: "include",
@@ -112,6 +147,7 @@ describe("App", () => {
   it("renders the empty cart state", async () => {
     setupFetch({
       "/auth/me": () => Response.json(aliceClaims),
+      "/api/catalog/products": () => Response.json(catalogFixture),
       "/api/cart": () =>
         Response.json({
           id: "cart-alice",
@@ -131,6 +167,7 @@ describe("App", () => {
   it("treats a missing current cart as empty", async () => {
     setupFetch({
       "/auth/me": () => Response.json(aliceClaims),
+      "/api/catalog/products": () => Response.json(catalogFixture),
       "/api/cart": () => new Response(null, { status: 404 })
     });
 
@@ -142,6 +179,7 @@ describe("App", () => {
   it("rejects malformed cart money values", async () => {
     setupFetch({
       "/auth/me": () => Response.json(aliceClaims),
+      "/api/catalog/products": () => Response.json(catalogFixture),
       "/api/cart": () =>
         Response.json({
           ...cartFixture,
@@ -159,6 +197,7 @@ describe("App", () => {
   it("renders cart errors honestly", async () => {
     setupFetch({
       "/auth/me": () => Response.json(aliceClaims),
+      "/api/catalog/products": () => Response.json(catalogFixture),
       "/api/cart": () => new Response(null, { status: 500 })
     });
 
@@ -166,6 +205,43 @@ describe("App", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Cart request failed (500)"
+    );
+  });
+
+  it("renders catalog errors without navigating or exposing browser tokens", async () => {
+    setupFetch({
+      "/auth/me": () => new Response(null, { status: 401 }),
+      "/api/catalog/products": () => new Response(null, { status: 503 })
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Catalog request failed (503)"
+    );
+    expect(screen.getByRole("link", { name: /sign in/i })).toBeInTheDocument();
+    expect(localStorage.length).toBe(0);
+    expect(sessionStorage.length).toBe(0);
+  });
+
+  it("rejects malformed catalog prices", async () => {
+    setupFetch({
+      "/auth/me": () => new Response(null, { status: 401 }),
+      "/api/catalog/products": () =>
+        Response.json({
+          products: [
+            {
+              ...catalogFixture.products[0],
+              priceCents: 1299.5
+            }
+          ]
+        })
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Catalog response had an unexpected shape"
     );
   });
 });

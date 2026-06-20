@@ -137,6 +137,35 @@ services:
       retries: 18
       start_period: 30s
 
+  catalog-service:
+    build:
+      context: .
+      dockerfile: catalog-service/Dockerfile
+    environment:
+      SERVER_PORT: 8084
+      MANAGEMENT_PORT: 9084
+      MANAGEMENT_ADDRESS: 127.0.0.1
+      CATALOG_OIDC_ISSUER_URI: http://localhost:8080/realms/oidc-service-reference
+      CATALOG_OIDC_AUDIENCE: commerce-api
+      CATALOG_OIDC_JWKS_URI: http://keycloak:8080/realms/oidc-service-reference/protocol/openid-connect/certs
+      CATALOG_SPICEDB_TARGET: spicedb:50051
+      CATALOG_SPICEDB_PRESHARED_KEY: ${SPICEDB_PRESHARED_KEY:-LOCAL_DEV_SPICEDB_PRESHARED_KEY__CHANGE_BEFORE_DEPLOY}
+      CATALOG_SPICEDB_PLAINTEXT: "true"
+      SPRING_PROFILES_ACTIVE: ${CATALOG_SERVICE_SPRING_PROFILES_ACTIVE:-local}
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      spicedb:
+        condition: service_healthy
+    networks:
+      - oidc-internal
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9084/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 30s
+
   apisix:
     image: apache/apisix:3.16.0-debian
     depends_on:
@@ -145,6 +174,8 @@ services:
       auth-service:
         condition: service_healthy
       cart-service:
+        condition: service_healthy
+      catalog-service:
         condition: service_healthy
     environment:
       APISIX_STAND_ALONE: "true"

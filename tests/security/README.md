@@ -1,13 +1,14 @@
-# Cart Security Harness
+# Security Harness
 
-This directory owns the cart-slice security checks. The files are intentionally
-local-first and verifier-shaped: stable check IDs, bounded evidence, actionable
-unavailable states, and fail-closed expected results.
+This directory owns slice security checks. The files are intentionally local-first and
+verifier-shaped: stable check IDs, bounded evidence, actionable unavailable states, and
+fail-closed expected results.
 
 Run from the repo root:
 
 ```sh
 sh tests/security/verify-cart-security-draft.sh
+sh tests/security/verify-catalog-security-draft.sh
 sh tests/security/verify-cart-security-live.sh
 ```
 
@@ -16,12 +17,12 @@ traces, or call destructive fixture endpoints. Any future live relationship muta
 as removing `cart:alice-cart#owner@user:alice`, must require an explicit local/test profile
 and must fail closed outside that profile.
 
-The live runner starts or reuses the local stack, enables the cart-service `test-fixture`
-profile only for harness endpoints, and restores the default local Auth Service scopes after
-audience/scope mutation cases. It prints stable IDs and pass/fail states only; no tokens,
-cookies, secrets, or full response bodies.
+The cart live runner starts or reuses the local stack, enables the cart-service
+`test-fixture` profile only for harness endpoints, and restores the default local Auth
+Service scopes after audience/scope mutation cases. It prints stable IDs and pass/fail
+states only; no tokens, cookies, secrets, or full response bodies.
 
-## Case Catalog
+## Cart Case Catalog
 
 | ID | Purpose | Live command | Expected result | Remediation when unavailable |
 | --- | --- | --- | --- | --- |
@@ -35,6 +36,12 @@ cookies, secrets, or full response bodies.
 | `SEC-BROWSER-AUTHORIZATION-OVERWRITTEN` | Prove browser `Authorization` is not trusted. | `sh tests/security/verify-cart-security-live.sh SEC-BROWSER-AUTHORIZATION-OVERWRITTEN` | APISIX overwrites browser bearer; service sees only injected token fingerprint. | Add gateway header overwrite proof and bounded token-fingerprint trace evidence. |
 | `SEC-RELATIONSHIP-REMOVAL-IMMEDIATE` | Prove SpiceDB revocation is immediate. | `HARNESS_PROFILE=local sh tests/security/verify-cart-security-live.sh SEC-RELATIONSHIP-REMOVAL-IMMEDIATE` | After owner relationship removal, next cart read denies without re-login. | Add local/test-only relationship mutation fixture and use fully consistent checks. |
 
+## Catalog Case Catalog
+
+| ID | Purpose | Live command | Expected result | Remediation when unavailable |
+| --- | --- | --- | --- | --- |
+| `SEC-CATALOG-ANONYMOUS-READ-ONLY` | Prove catalog browsing is anonymous read-only while merchant writes still require the full write ladder. | `sh tests/security/verify-catalog-security-live.sh SEC-CATALOG-ANONYMOUS-READ-ONLY` | Anonymous callers can read catalog list/detail without tokens; anonymous `POST/PATCH` deny; merchant writes require `catalog:write` plus SpiceDB `store:main#manage`. | Allowlist only catalog `GET` list/detail as auth-optional; route writes through JWT, `ScopeAuthorizer`, and `ResourceAuthorizer` `store:main#manage` checks. |
+
 ## Evidence Rules
 
 - Print stable IDs, service/route availability, HTTP status classes, trace IDs, and masked
@@ -42,5 +49,6 @@ cookies, secrets, or full response bodies.
 - Never print access tokens, refresh tokens, ID tokens, cookies, secrets, raw prompts, or
   full request/response bodies.
 - Report concrete unavailable states such as `cart-service unavailable`,
-  `APISIX /api/cart route missing`, `SpiceDB unavailable`, or
+  `catalog-service unavailable`, `APISIX /api/cart route missing`,
+  `APISIX /api/catalog/products route missing`, `SpiceDB unavailable`, or
   `local/test mutation profile disabled`.
