@@ -18,7 +18,20 @@ public final class InMemoryAuthorizationClient implements AuthorizationClient {
   }
 
   public InMemoryAuthorizationClient grant(Relationship relationship) {
-    return grant(relationship.subject(), relationship.resource(), new Permission(relationship.relation()));
+    permissionsFor(relationship).forEach(permission ->
+        grant(relationship.subject(), relationship.resource(), permission));
+    return this;
+  }
+
+  @Override
+  public void writeRelationship(Relationship relationship) {
+    grant(relationship);
+  }
+
+  @Override
+  public void deleteRelationship(Relationship relationship) {
+    permissionsFor(relationship).forEach(permission ->
+        grants.remove(new Grant(relationship.subject(), relationship.resource(), permission)));
   }
 
   @Override
@@ -35,4 +48,22 @@ public final class InMemoryAuthorizationClient implements AuthorizationClient {
   }
 
   private record Grant(SubjectRef subject, ResourceRef resource, Permission permission) {}
+
+  private static Set<Permission> permissionsFor(Relationship relationship) {
+    String resourceType = relationship.resource().type();
+    String relation = relationship.relation();
+    if ("cart".equals(resourceType) && "owner".equals(relation)) {
+      return Set.of(new Permission("read"), new Permission("write"));
+    }
+    if ("store".equals(resourceType) && "manager".equals(relation)) {
+      return Set.of(new Permission("view"), new Permission("manage"));
+    }
+    if ("order".equals(resourceType) && "owner".equals(relation)) {
+      return Set.of(new Permission("read"), new Permission("cancel"));
+    }
+    if ("order".equals(resourceType) && "support".equals(relation)) {
+      return Set.of(new Permission("read"));
+    }
+    return Set.of(new Permission(relation));
+  }
 }

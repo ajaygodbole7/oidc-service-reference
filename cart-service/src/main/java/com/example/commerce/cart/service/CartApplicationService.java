@@ -7,10 +7,14 @@ import com.example.commerce.cart.domain.ProductId;
 import com.example.commerce.security.CommercePrincipal;
 import com.example.commerce.security.DecisionTrace;
 import com.example.commerce.security.Permission;
+import com.example.commerce.security.Relationship;
 import com.example.commerce.security.ResourceAuthorizer;
 import com.example.commerce.security.ResourceRef;
 import com.example.commerce.security.ScopeAuthorizer;
+import com.example.commerce.security.SubjectRef;
 import java.util.List;
+import java.util.UUID;
+import java.util.function.Supplier;
 
 public final class CartApplicationService {
 
@@ -22,14 +26,24 @@ public final class CartApplicationService {
   private final CartRepository repository;
   private final ScopeAuthorizer scopeAuthorizer;
   private final ResourceAuthorizer resourceAuthorizer;
+  private final Supplier<CartId> cartIdGenerator;
 
   public CartApplicationService(
       CartRepository repository,
       ScopeAuthorizer scopeAuthorizer,
       ResourceAuthorizer resourceAuthorizer) {
+    this(repository, scopeAuthorizer, resourceAuthorizer, () -> new CartId(UUID.randomUUID().toString()));
+  }
+
+  public CartApplicationService(
+      CartRepository repository,
+      ScopeAuthorizer scopeAuthorizer,
+      ResourceAuthorizer resourceAuthorizer,
+      Supplier<CartId> cartIdGenerator) {
     this.repository = repository;
     this.scopeAuthorizer = scopeAuthorizer;
     this.resourceAuthorizer = resourceAuthorizer;
+    this.cartIdGenerator = cartIdGenerator;
   }
 
   public CartResult getCurrentCart(CommercePrincipal principal) {
@@ -50,8 +64,16 @@ public final class CartApplicationService {
 
   public CartResult addItem(CommercePrincipal principal, AddItemCommand command) {
     DecisionTrace scopeTrace = scopeAuthorizer.requireScope(principal, CART_WRITE);
-    Cart cart = repository.findByOwnerSub(principal.subject())
-        .orElseThrow(() -> new CartNotFoundException("cart not found for current user"));
+    Cart cart = repository.findByOwnerSub(principal.subject()).orElse(null);
+    if (cart == null) {
+      CartId cartId = cartIdGenerator.get();
+      DecisionTrace provisionTrace = resourceAuthorizer.writeRelationship(
+          new Relationship(resource(cartId), "owner", SubjectRef.user(principal.subject())));
+      cart = new Cart(cartId, principal.subject(), List.of());
+      cart.addItem(command.productId(), command.quantity(), command.unitPrice());
+      repository.save(cart);
+      return new CartResult(cart, List.of(scopeTrace, provisionTrace));
+    }
     DecisionTrace resourceTrace = resourceAuthorizer.requireAllowed(principal, resource(cart.id()), WRITE);
     cart.addItem(command.productId(), command.quantity(), command.unitPrice());
     repository.save(cart);

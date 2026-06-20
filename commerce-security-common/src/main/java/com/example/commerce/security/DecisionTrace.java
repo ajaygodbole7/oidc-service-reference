@@ -31,4 +31,12 @@ public record DecisionTrace(
         "resource", resource.toString(),
         "permission", permission.value()));
   }
+
+  public static DecisionTrace relationship(
+      boolean allowed, Relationship relationship, String reason) {
+    return new DecisionTrace("resource_provisioning", allowed, reason, Map.of(
+        "subject", relationship.subject().toString(),
+        "resource", relationship.resource().toString(),
+        "relation", relationship.relation()));
+  }
 }

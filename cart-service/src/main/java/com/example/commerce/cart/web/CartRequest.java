@@ -9,12 +9,12 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
 
-final class CartRequest {
+public final class CartRequest {
 
   private CartRequest() {
   }
 
-  record AddItem(
+  public record AddItem(
       @NotBlank String productId,
       @Min(1) int quantity,
       @NotNull @DecimalMin("0.00") @Digits(integer = 10, fraction = 2) BigDecimal unitPrice) {

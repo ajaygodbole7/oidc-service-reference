@@ -58,6 +58,23 @@ class CartWebErrorHandlingTest {
   }
 
   @Test
+  void accepts_valid_add_item_json_request() throws Exception {
+    mockMvc.perform(post("/api/cart/items")
+            .requestAttr("commercePrincipal", principal())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "productId": "sku-1",
+                  "quantity": 1,
+                  "unitPrice": 10.12
+                }
+                """))
+        .andExpect(status().isCreated())
+        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+        .andExpect(jsonPath("$.items[0].id").value("sku-1"));
+  }
+
+  @Test
   void missing_principal_request_attribute_returns_problem_json_401() throws Exception {
     mockMvc.perform(get("/api/cart"))
         .andExpect(status().isUnauthorized())

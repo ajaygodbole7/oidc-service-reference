@@ -85,10 +85,12 @@ local _M = {
 -- Header / cookie helpers
 -- ---------------------------------------------------------------------
 
--- Hop-by-hop headers per RFC 7230 §6.1 plus Cookie / Host / Content-
--- Length / Authorization. Stripped from the upstream request so the
--- Resource Server sees only the gateway-injected Authorization header
--- and the path/body.
+-- Hop-by-hop headers per RFC 7230 §6.1 plus Cookie / Host /
+-- Authorization. Stripped from the upstream request so the Resource
+-- Server sees only the gateway-injected Authorization header and the
+-- path/body. Do not strip Content-Length here: this plugin does not
+-- mutate the request body, and clearing it in the access phase can make
+-- proxied POSTs arrive upstream as a missing body.
 --
 -- "authorization" is in this set defensively: the upstream injection at
 -- the end of access() uses core.request.set_header which currently
@@ -110,7 +112,6 @@ local HOP_BY_HOP = {
   ["transfer-encoding"]   = true,
   ["upgrade"]             = true,
   ["host"]                = true,     -- nginx sets Host based on upstream
-  ["content-length"]      = true,     -- let nginx recompute
   ["authorization"]       = true,     -- gateway-injected; never trust inbound
 }
 

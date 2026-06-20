@@ -28,4 +28,26 @@ public final class ResourceAuthorizer {
     }
     return decision.trace();
   }
+
+  public DecisionTrace writeRelationship(Relationship relationship) {
+    try {
+      client.writeRelationship(relationship);
+      return DecisionTrace.relationship(true, relationship, "relationship_written");
+    } catch (AuthorizationUnavailableException e) {
+      DecisionTrace trace =
+          DecisionTrace.relationship(false, relationship, "authorization_unavailable");
+      throw new AuthorizationDeniedException("resource relationship write unavailable", trace, e);
+    }
+  }
+
+  public DecisionTrace deleteRelationship(Relationship relationship) {
+    try {
+      client.deleteRelationship(relationship);
+      return DecisionTrace.relationship(true, relationship, "relationship_deleted");
+    } catch (AuthorizationUnavailableException e) {
+      DecisionTrace trace =
+          DecisionTrace.relationship(false, relationship, "authorization_unavailable");
+      throw new AuthorizationDeniedException("resource relationship delete unavailable", trace, e);
+    }
+  }
 }

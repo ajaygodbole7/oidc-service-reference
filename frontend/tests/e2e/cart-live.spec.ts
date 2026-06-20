@@ -28,17 +28,21 @@ type FixtureEvidence = {
 const TOKEN_MATERIAL_RE =
   /access_token|refresh_token|id_token|[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}/i;
 
-async function loginAsAlice(page: Page): Promise<void> {
+async function loginAs(page: Page, username: string, password: string = username): Promise<void> {
   await page.goto("/");
   await page.getByRole("link", { name: /sign in/i }).click();
   await page.waitForURL(KEYCLOAK_AUTH_RE);
-  await page.fill("#username", "alice");
-  await page.fill("#password", "alice");
+  await page.fill("#username", username);
+  await page.fill("#password", password);
   await Promise.all([
     page.waitForURL(`${APP_ORIGIN}/`),
     page.click("#kc-login")
   ]);
   await expect(page.getByText(/signed in as/i)).toBeVisible();
+}
+
+async function loginAsAlice(page: Page): Promise<void> {
+  await loginAs(page, "alice");
 }
 
 function installSameOriginJsonCapture(page: Page): {
@@ -88,10 +92,14 @@ async function apiFetch(
 ): Promise<FetchResult> {
   return page.evaluate(
     async ({ requestPath, requestInit }) => {
+      const headers = {
+        Accept: "application/json",
+        ...(requestInit.headers ?? {})
+      };
       const res = await fetch(requestPath, {
         credentials: "include",
-        headers: { Accept: "application/json", ...(requestInit.headers ?? {}) },
-        ...requestInit
+        ...requestInit,
+        headers
       });
       return {
         status: res.status,
@@ -167,6 +175,40 @@ test("SEC-RELATIONSHIP-WITHOUT-SCOPE: Alice relationship cannot bypass missing c
   expect(response.status).toBe(403);
   expect(response.body).toContain("missing required scope cart:read");
   expect(response.body).not.toMatch(TOKEN_MATERIAL_RE);
+});
+
+test("SEC-OWNERSHIP-PROVISIONED-FOR-CALLER and SEC-NO-RESOURCE-HIJACK: first add provisions owner for authenticated subject only", async ({
+  page
+}) => {
+  test.skip(process.env.CART_SECURITY_SCENARIO !== "dynamic-ownership", "requires reset cart-service and default cart scopes");
+
+  await loginAs(page, "admin");
+  const csrf = await csrfHeaders(page);
+
+  const create = await apiFetch(page, "/api/cart/items", {
+    method: "POST",
+    headers: { ...csrf, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      productId: "bob-cart",
+      quantity: 1,
+      unitPrice: 12.5
+    })
+  });
+  expect(create.status).toBe(201);
+  expect(create.body).not.toMatch(TOKEN_MATERIAL_RE);
+
+  const created = JSON.parse(create.body) as { id?: unknown; items?: unknown };
+  expect(typeof created.id).toBe("string");
+  expect(created.id).not.toBe("bob-cart");
+
+  const current = await apiFetch(page, "/api/cart");
+  expect(current.status).toBe(200);
+  expect(current.body).toContain(String(created.id));
+  expect(current.body).not.toMatch(TOKEN_MATERIAL_RE);
+
+  const hijack = await apiFetch(page, "/api/carts/bob-cart");
+  expect(hijack.status).toBe(403);
+  expect(hijack.body).not.toMatch(TOKEN_MATERIAL_RE);
 });
 
 test("SEC-NON-COMMERCE-AUD: non-commerce audience is rejected before cart domain work", async ({

@@ -542,7 +542,7 @@ All Spring services call it through an adapter:
 
 ```java
 public interface AuthorizationClient {
-    boolean check(SubjectRef subject, ResourceRef resource, Permission permission);
+    AuthorizationDecision check(SubjectRef subject, ResourceRef resource, Permission permission);
     void writeRelationship(Relationship relationship);
     void deleteRelationship(Relationship relationship);
 }
@@ -551,7 +551,10 @@ public interface AuthorizationClient {
 Ownership rule: application services call `ResourceAuthorizer`; `ResourceAuthorizer`
 depends on the `AuthorizationClient` port; the SpiceDB adapter implements that port in
 infrastructure/client code. Application services, controllers, and domain objects never
-inject or call `AuthorizationClient` directly.
+inject or call `AuthorizationClient` directly. Relationship writes use SpiceDB TOUCH
+semantics through `AuthorizationClient.writeRelationship(...)`, so retries are
+idempotent; deletes exist for revocation verification and future lifecycle flows, not as
+a cart-deletion feature.
 
 Do not scatter SpiceDB SDK calls through controllers or domain services.
 
@@ -663,6 +666,12 @@ Controller/application-service contract:
 - Application services orchestrate the ladder in this order: scope check, resource check,
   domain operation, persistence. Trace/evidence is recorded as each gate runs, including
   denials; domain and persistence success are recorded only after mutation succeeds.
+- Create-on-first-write is the narrow exception to "resource check before domain
+  operation": there is no existing resource for gate 4 to check. The create path is
+  authenticated and scope-gated, resolves only by the current user's subject, generates
+  the resource id server-side, writes the ownership relationship for
+  `principal.subject()`, then persists. Every later access to that resource runs the
+  normal gate-4 `ResourceAuthorizer` check.
 - Domain objects enforce business invariants and do not depend on Spring Security, JWT,
   web, persistence, or SpiceDB SDK types.
 - Repository interfaces stay in the domain; implementations stay in persistence.
@@ -756,6 +765,19 @@ Rules:
 - `GET /api/cart`: resolve the current user's cart id server-side, then still require
   `cart:read` plus SpiceDB `cart:{resolvedCartId}#read@user:{sub}`. `findByOwner(sub)` or
   a future `WHERE owner_id = ?` lookup is not a substitute for gate four.
+- `POST /api/cart/items` creates the current user's cart on first add if no cart exists
+  for `principal.subject()`. Creation is gated by authentication and `cart:write`; it
+  does not run gate 4 because the cart does not exist yet. It must generate the cart id
+  server-side, write `cart:{generatedId}#owner@user:{sub}` through
+  `ResourceAuthorizer.writeRelationship(...)`, then persist. Because SpiceDB checks are
+  fully consistent, the written edge is visible to the next request's gate-4 check.
+- The create path is reachable only through current-user by-sub resolution. Any endpoint
+  or request shape containing a client-supplied `cartId` always goes through normal gate
+  4 and cannot provision ownership.
+- If the relationship write fails, creation fails closed and no cart is persisted. A
+  write-first/persist-second failure can leave only a harmless orphan relationship
+  pointing at no cart; orphan cleanup is production hardening, not part of this local
+  reference.
 - `GET /api/carts/{cartId}` requires:
   - `cart:read`
   - SpiceDB `cart:{cartId}#read@user:{sub}`
@@ -935,6 +957,21 @@ Required scenario IDs:
    - Caller owns a resource but token lacks the required scope. Action gate
      denies.
 
+- **SEC-OWNERSHIP-PROVISIONED-FOR-CALLER — Dynamic ownership provisioning**
+   - A scoped authenticated user with no pre-seeded cart performs first add-to-cart.
+     The service writes `cart:{generatedId}#owner@user:{sub}` for the authenticated
+     subject, not a client-supplied subject, and the next access succeeds through
+     fully consistent gate 4.
+
+- **SEC-NO-RESOURCE-HIJACK — No attacker-chosen resource claim**
+   - A caller cannot create or claim an existing/attacker-chosen cart id. The create
+     path ignores any request/body value that resembles a cart id and uses only a
+     server-generated id; access to another cart id remains denied by gate 4.
+
+- **SEC-PROVISIONING-FAILS-CLOSED — Relationship write failure denies create**
+   - If SpiceDB relationship provisioning fails during first add-to-cart, the request
+     fails and no usable cart is persisted without its ownership relationship.
+
 - **SEC-SPOOFED-IDENTITY-HEADERS — Spoofed identity headers**
    - Browser sends `X-User: admin`. Gateway strips it. Trace shows the stripped
      header.
@@ -1034,8 +1071,9 @@ Vertical slice first, then parallel fan-out:
    - cart UI.
    - security checks `SEC-NO-BROWSER-TOKENS` and `SEC-NON-COMMERCE-AUD`.
    - security checks `SEC-SCOPE-WITHOUT-RELATIONSHIP`,
-     `SEC-RELATIONSHIP-WITHOUT-SCOPE`, `SEC-SPOOFED-IDENTITY-HEADERS`,
-     `SEC-BROWSER-AUTHORIZATION-OVERWRITTEN`, and
+     `SEC-RELATIONSHIP-WITHOUT-SCOPE`, `SEC-OWNERSHIP-PROVISIONED-FOR-CALLER`,
+     `SEC-NO-RESOURCE-HIJACK`, `SEC-PROVISIONING-FAILS-CLOSED`,
+     `SEC-SPOOFED-IDENTITY-HEADERS`, `SEC-BROWSER-AUTHORIZATION-OVERWRITTEN`, and
      `SEC-RELATIONSHIP-REMOVAL-IMMEDIATE`.
    - architecture checks for controller/service/domain/persistence/security boundaries.
    - no-browser-tokens guard remains green.

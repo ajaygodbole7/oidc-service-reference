@@ -69,21 +69,29 @@ class SpiceDbAuthorizationClientLiveTest {
   }
 
   @Test
-  void relationship_delete_and_touch_are_fully_consistent() throws Exception {
+  void relationship_write_and_delete_through_port_are_fully_consistent() throws Exception {
     assumeTrue(Boolean.parseBoolean(System.getenv("SPICEDB_LIVE_TEST")),
         "set SPICEDB_LIVE_TEST=true to run against local SpiceDB");
 
     seedSpiceDb();
+    ResourceRef dynamicCart = new ResourceRef("cart", "dynamic-contract-cart");
+    Relationship dynamicOwner = new Relationship(dynamicCart, "owner", SubjectRef.user("alice"));
 
     try (SpiceDbAuthorizationClient real =
         new SpiceDbAuthorizationClient(TARGET, PRESHARED_KEY, true, 2_000)) {
       assertThat(real.check(SubjectRef.user("alice"), ALICE_CART, READ).allowed()).isTrue();
 
-      real.deleteRelationship(ALICE_CART, "owner", SubjectRef.user("alice"));
+      real.deleteRelationship(new Relationship(ALICE_CART, "owner", SubjectRef.user("alice")));
       assertThat(real.check(SubjectRef.user("alice"), ALICE_CART, READ).allowed()).isFalse();
 
-      real.touchRelationship(ALICE_CART, "owner", SubjectRef.user("alice"));
+      real.writeRelationship(new Relationship(ALICE_CART, "owner", SubjectRef.user("alice")));
       assertThat(real.check(SubjectRef.user("alice"), ALICE_CART, READ).allowed()).isTrue();
+
+      assertThat(real.check(SubjectRef.user("alice"), dynamicCart, READ).allowed()).isFalse();
+      real.writeRelationship(dynamicOwner);
+      assertThat(real.check(SubjectRef.user("alice"), dynamicCart, READ).allowed()).isTrue();
+      real.deleteRelationship(dynamicOwner);
+      assertThat(real.check(SubjectRef.user("alice"), dynamicCart, READ).allowed()).isFalse();
     }
   }
 

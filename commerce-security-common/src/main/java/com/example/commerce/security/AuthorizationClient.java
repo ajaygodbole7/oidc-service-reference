@@ -7,4 +7,12 @@ package com.example.commerce.security;
 public interface AuthorizationClient {
 
   AuthorizationDecision check(SubjectRef subject, ResourceRef resource, Permission permission);
+
+  default void writeRelationship(Relationship relationship) {
+    throw new UnsupportedOperationException("relationship writes are not supported");
+  }
+
+  default void deleteRelationship(Relationship relationship) {
+    throw new UnsupportedOperationException("relationship deletes are not supported");
+  }
 }

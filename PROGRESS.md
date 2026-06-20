@@ -22,7 +22,7 @@ Every session must leave these sections populated:
 
 ## Current slice
 
-Cart vertical slice — ACCEPTED locally on 2026-06-18 22:46 PDT.
+Dynamic cart ownership provisioning — ACCEPTED locally on 2026-06-19 17:07 PDT.
 
 Scaffold from `../oidc-reference` is DONE and accepted (2026-06-17 18:15): stack boots
 healthy and `SEC-NO-BROWSER-TOKENS` passed live. Authorization substrate is DONE and
@@ -30,14 +30,18 @@ accepted (2026-06-17 22:10): SpiceDB starts, schema loads, seed relationships ap
 fake-vs-real adapter contract passes, and unavailable SpiceDB denies through
 `ResourceAuthorizer`. Cart is now accepted: the cart UI and cart-service run through APISIX,
 the JWT/scope/SpiceDB gates are explicit, all cart `SEC-*` cases passed live, and the
-no-browser-token guard remains green.
+no-browser-token guard remains green. Dynamic ownership is accepted: first add resolves the
+cart by current subject, generates the cart id server-side, writes `cart:{id}#owner@user:{sub}`
+through `ResourceAuthorizer`, then persists; later reads/writes use the normal fully
+consistent SpiceDB gate-4 check.
 
 ## Exact next action
 
-Cart vertical slice is ACCEPTED locally. The next concrete action is to commit the accepted
-cart slice and then move to parallel fan-out under the documented ownership scopes:
-catalog-service, order-service, payment-service, frontend workflow, harness/security, and
-later persistence. Do not start Postgres until the commit is made and the next slice is chosen.
+Dynamic cart ownership provisioning is ACCEPTED locally. The next concrete action is to
+commit this accepted slice, tear down/prune Docker for disk, then choose the next fan-out
+slice under the documented ownership scopes: catalog-service, order-service,
+payment-service, frontend workflow, harness/security, and later persistence. Do not start
+Postgres until this slice is committed and the next slice is chosen.
 
 Useful acceptance evidence to preserve:
 
@@ -53,6 +57,7 @@ sh scripts/verify-cart-spicedb-live.sh
 E2E_CART_SKIP_UP=1 sh scripts/e2e-cart.sh
 sh tests/security/verify-cart-security-live.sh SEC-SPOOFED-IDENTITY-HEADERS
 sh tests/security/verify-cart-security-live.sh SEC-SCOPE-WITHOUT-RELATIONSHIP SEC-BROWSER-AUTHORIZATION-OVERWRITTEN SEC-RELATIONSHIP-REMOVAL-IMMEDIATE SEC-RELATIONSHIP-WITHOUT-SCOPE SEC-NON-COMMERCE-AUD
+sh tests/security/verify-cart-security-live.sh SEC-OWNERSHIP-PROVISIONED-FOR-CALLER SEC-NO-RESOURCE-HIJACK SEC-PROVISIONING-FAILS-CLOSED
 cd frontend && E2E_FULL_STACK=1 corepack pnpm exec playwright test tests/e2e/auth.spec.ts --grep SEC-NO-BROWSER-TOKENS
 ```
 
@@ -77,6 +82,8 @@ The cart slice can advance only when:
   `SEC-SCOPE-WITHOUT-RELATIONSHIP`, `SEC-RELATIONSHIP-WITHOUT-SCOPE`,
   `SEC-SPOOFED-IDENTITY-HEADERS`, `SEC-BROWSER-AUTHORIZATION-OVERWRITTEN`, and
   `SEC-RELATIONSHIP-REMOVAL-IMMEDIATE` pass live
+- `SEC-OWNERSHIP-PROVISIONED-FOR-CALLER`, `SEC-NO-RESOURCE-HIJACK`, and
+  `SEC-PROVISIONING-FAILS-CLOSED` pass live/local contract gates
 - architecture checks for controller/service/domain/persistence/security boundaries pass
 - no-browser-token guard remains green
 
@@ -98,6 +105,10 @@ The cart slice can advance only when:
       (Accepted 2026-06-18 22:46 PDT — cart-service + frontend tests green,
       live SpiceDB proof green, `SEC-NO-BROWSER-TOKENS` green, and all cart live
       `SEC-*` cases green.)
+- [x] Add dynamic cart ownership provisioning: create-on-first-add writes the SpiceDB owner
+      relationship for the authenticated subject through `ResourceAuthorizer`, uses a
+      server-generated cart id, proves the next access through fully consistent gate 4,
+      and fails closed when relationship writes fail. (Accepted 2026-06-19 17:07 PDT.)
 - [ ] Parallel fan-out after cart: catalog-service agent, order-service agent,
       payment-service agent, frontend workflow agent, and harness/security agent work under
       explicit ownership scopes.
@@ -268,6 +279,24 @@ Keycloak default client scopes always granted `cart:read`/`cart:write`; the real
 normal local profile. The aggregate `verify-all.sh` remains a lightweight local gate and
 prints PENDING pointers for live-only cart checks and future services.
 
+Dynamic ownership provisioning accepted 2026-06-19 17:07 PDT:
+
+```sh
+sh scripts/verify-cart-service.sh
+sh scripts/verify-api-gateway.sh
+CART_SECURITY_SKIP_UP=1 sh tests/security/verify-cart-security-live.sh SEC-OWNERSHIP-PROVISIONED-FOR-CALLER SEC-NO-RESOURCE-HIJACK SEC-PROVISIONING-FAILS-CLOSED
+```
+
+Result: PASS. The service contract proves first add for a subject with no existing cart
+provisions `cart:{serverGeneratedId}#owner@user:{sub}` through the authorization port before
+persistence, proves relationship-write failures fail closed without saving the cart, and
+proves the fake and real SpiceDB adapters agree that a write is immediately visible to a
+subsequent fully consistent check. The live browser/gateway harness proves an authenticated
+`admin` first add succeeds without a pre-seeded cart and that attacker-chosen resource ids in
+the payload are ignored (`SEC-NO-RESOURCE-HIJACK`). The live loop also found and fixed an
+APISIX forwarding bug: `bff-session` was clearing `Content-Length`, causing proxied POSTs to
+arrive at cart-service with a missing body.
+
 Scaffold slice ACCEPTED 2026-06-17 18:15 — all gates green live, in a watched run:
 - `sh scripts/up.sh` — stack boots healthy (APISIX 3.16.0-debian, Keycloak 26.6.3, Valkey
   9.1.0, JDK-26 auth-service).
@@ -354,10 +383,10 @@ scopes.
 
 ## Blockers
 
-- Host disk tight: `/System/Volumes/Data` at 2.3 GiB free / 99% used (2026-06-18 22:46).
-  Docker build cache is currently 0B after pruning, but the local stack images/containers
-  are present. Tear down and prune after the acceptance commit; any full rebuild or Postgres
-  image pull may still hit ENOSPC.
+- Host disk tight: `/System/Volumes/Data` at 1.7 GiB free / 100% used (2026-06-19 17:07).
+  Docker build cache was pruned after the cart-service rebuild, but the local stack
+  images/containers are present. Tear down and prune after the acceptance commit; any full
+  rebuild or Postgres image pull may still hit ENOSPC.
 - Local shell has Node 24.12.0; `frontend/package.json` pins Node 26.3.0, so pnpm emits
   an engine warning until Node is switched.
 - Postgres persistence is intentionally deferred until the first cart authorization ladder
@@ -373,11 +402,12 @@ scopes.
 
 ## Session handoff
 
-The scaffold, authorization-substrate, and cart vertical slices are accepted locally. Cart
-is not committed yet. The next agent should commit the accepted cart slice, tear down/prune
-the stack to protect disk, then start parallel fan-out under the documented service scopes.
-Keep the four gates visible in code and traces. Do not start Postgres until the next slice
-is chosen; cart still uses in-memory repositories by design.
+The scaffold, authorization-substrate, cart vertical slice, and dynamic cart ownership
+provisioning are accepted locally. Dynamic ownership is not committed yet. The next agent
+should commit the accepted slice, tear down/prune the stack to protect disk, then start
+parallel fan-out under the documented service scopes. Keep the four gates visible in code
+and traces. Do not start Postgres until the next slice is chosen; cart still uses in-memory
+repositories by design.
 
 ## Session log
 
@@ -499,3 +529,20 @@ Append-only, timestamped chronology (newest at the bottom); captures non-commit 
   `SEC-RELATIONSHIP-REMOVAL-IMMEDIATE`, `E2E_CART_SKIP_UP=1 sh scripts/e2e-cart.sh`, and
   `sh scripts/verify-all.sh`. Docker build cache is 0B; stack is still running until the
   acceptance commit/teardown step.
+- 2026-06-19 17:07 PDT — Codex — implemented and accepted dynamic cart ownership
+  provisioning. Added `AuthorizationClient.writeRelationship/deleteRelationship` and
+  `ResourceAuthorizer.writeRelationship`, with fake and real SpiceDB adapters using TOUCH
+  semantics and a live write→check→delete contract. Cart first-add now resolves by current
+  subject only, generates the cart id server-side, writes `cart:{id}#owner@user:{sub}` before
+  persistence, and never accepts a client cart id on create; subsequent access uses the normal
+  fully consistent gate-4 check. Added service tests for server-generated ids, no save on
+  provisioning failure, and bounded provisioning trace evidence. Added `SEC-OWNERSHIP-
+  PROVISIONED-FOR-CALLER`, `SEC-NO-RESOURCE-HIJACK`, and
+  `SEC-PROVISIONING-FAILS-CLOSED` to the harness. The first live run exposed that APISIX
+  `bff-session` cleared `Content-Length`, making proxied POST bodies arrive missing; fixed
+  the gateway plugin and verified `sh scripts/verify-api-gateway.sh`. Final watched gates
+  green: `sh scripts/verify-cart-service.sh`, `sh scripts/verify-api-gateway.sh`, and
+  `CART_SECURITY_SKIP_UP=1 sh tests/security/verify-cart-security-live.sh
+  SEC-OWNERSHIP-PROVISIONED-FOR-CALLER SEC-NO-RESOURCE-HIJACK
+  SEC-PROVISIONING-FAILS-CLOSED`. Pruned Docker builder cache after rebuild; disk remains
+  critically low at about 1.7 GiB free.

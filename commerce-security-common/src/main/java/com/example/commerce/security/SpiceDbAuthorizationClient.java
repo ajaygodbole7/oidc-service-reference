@@ -28,11 +28,21 @@ public final class SpiceDbAuthorizationClient implements AuthorizationClient, Au
   }
 
   public void touchRelationship(ResourceRef resource, String relation, SubjectRef subject) {
-    writeRelationship(RelationshipUpdate.Operation.OPERATION_TOUCH, resource, relation, subject);
+    applyRelationship(RelationshipUpdate.Operation.OPERATION_TOUCH, resource, relation, subject);
   }
 
   public void deleteRelationship(ResourceRef resource, String relation, SubjectRef subject) {
-    writeRelationship(RelationshipUpdate.Operation.OPERATION_DELETE, resource, relation, subject);
+    applyRelationship(RelationshipUpdate.Operation.OPERATION_DELETE, resource, relation, subject);
+  }
+
+  @Override
+  public void writeRelationship(Relationship relationship) {
+    touchRelationship(relationship.resource(), relationship.relation(), relationship.subject());
+  }
+
+  @Override
+  public void deleteRelationship(Relationship relationship) {
+    deleteRelationship(relationship.resource(), relationship.relation(), relationship.subject());
   }
 
   public SpiceDbAuthorizationClient(
@@ -98,7 +108,7 @@ public final class SpiceDbAuthorizationClient implements AuthorizationClient, Au
         .build();
   }
 
-  private void writeRelationship(
+  private void applyRelationship(
       RelationshipUpdate.Operation operation,
       ResourceRef resource,
       String relation,

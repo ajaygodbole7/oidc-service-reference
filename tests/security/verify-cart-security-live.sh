@@ -68,6 +68,15 @@ enable_cart_fixtures() {
   wait_responding "APISIX" "http://127.0.0.1:9080/auth/me" 120
 }
 
+reset_cart_service_for_dynamic_ownership() {
+  info "recreating cart-service so dynamic-ownership case starts without an admin cart"
+  CART_SERVICE_SPRING_PROFILES_ACTIVE=test-fixture \
+    docker compose up -d --no-build --force-recreate cart-service apisix >/dev/null
+  wait_service_healthy cart-service
+  docker compose restart apisix >/dev/null
+  wait_responding "APISIX" "http://127.0.0.1:9080/auth/me" 120
+}
+
 cleanup() {
   restore_default_auth
 }
@@ -122,6 +131,12 @@ run_case() {
   pass "$id" "live local verifier passed"
 }
 
+run_service_contract_case() {
+  id="$1"
+  sh scripts/verify-cart-service.sh >/dev/null
+  pass "$id" "service contract verifier passed"
+}
+
 prepare_stack
 
 if should_run SEC-SCOPE-WITHOUT-RELATIONSHIP; then
@@ -150,6 +165,22 @@ fi
 if should_run SEC-RELATIONSHIP-WITHOUT-SCOPE; then
   set_auth_scopes "$MISSING_CART_SCOPE_SCOPES"
   run_case SEC-RELATIONSHIP-WITHOUT-SCOPE 0 missing-scope
+fi
+
+if should_run SEC-OWNERSHIP-PROVISIONED-FOR-CALLER; then
+  restore_default_auth
+  reset_cart_service_for_dynamic_ownership
+  run_case SEC-OWNERSHIP-PROVISIONED-FOR-CALLER 0 dynamic-ownership
+fi
+
+if should_run SEC-NO-RESOURCE-HIJACK; then
+  restore_default_auth
+  reset_cart_service_for_dynamic_ownership
+  run_case SEC-NO-RESOURCE-HIJACK 0 dynamic-ownership
+fi
+
+if should_run SEC-PROVISIONING-FAILS-CLOSED; then
+  run_service_contract_case SEC-PROVISIONING-FAILS-CLOSED
 fi
 
 if should_run SEC-NON-COMMERCE-AUD; then

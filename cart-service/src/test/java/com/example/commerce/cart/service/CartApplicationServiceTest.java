@@ -12,10 +12,12 @@ import com.example.commerce.cart.domain.Quantity;
 import com.example.commerce.security.AuthorizationClient;
 import com.example.commerce.security.AuthorizationDecision;
 import com.example.commerce.security.AuthorizationDeniedException;
+import com.example.commerce.security.AuthorizationUnavailableException;
 import com.example.commerce.security.CommercePrincipal;
 import com.example.commerce.security.DecisionTrace;
 import com.example.commerce.security.InMemoryAuthorizationClient;
 import com.example.commerce.security.Permission;
+import com.example.commerce.security.Relationship;
 import com.example.commerce.security.ResourceAuthorizer;
 import com.example.commerce.security.ResourceRef;
 import com.example.commerce.security.ScopeAuthorizer;
@@ -119,6 +121,79 @@ class CartApplicationServiceTest {
   }
 
   @Test
+  void first_add_for_user_without_cart_provisions_owner_for_authenticated_subject_then_saves() {
+    RecordingCartRepository repository = new RecordingCartRepository(List.of());
+    RecordingAuthorizationClient authorizationClient = recordingClient(new InMemoryAuthorizationClient());
+    CartApplicationService service = service(
+        repository,
+        authorizationClient,
+        () -> new CartId("generated-cart"));
+
+    CartResult result = service.addItem(principal("carol", "cart:write"), addItemCommand());
+
+    assertThat(result.cart().id()).isEqualTo(new CartId("generated-cart"));
+    assertThat(result.cart().ownerSub()).isEqualTo("carol");
+    assertThat(result.cart().items()).hasSize(1);
+    assertThat(authorizationClient.requests()).isEmpty();
+    assertThat(authorizationClient.relationshipWrites())
+        .containsExactly(new Relationship(
+            new ResourceRef("cart", "generated-cart"), "owner", SubjectRef.user("carol")));
+    assertThat(repository.saveCount()).isEqualTo(1);
+    assertThat(repository.findByOwnerSub("carol")).isPresent();
+  }
+
+  @Test
+  void first_add_create_path_ignores_attacker_chosen_cart_ids_by_only_accepting_add_item_command() {
+    RecordingCartRepository repository = new RecordingCartRepository(List.of());
+    RecordingAuthorizationClient authorizationClient = recordingClient(new InMemoryAuthorizationClient());
+    CartApplicationService service = service(
+        repository,
+        authorizationClient,
+        () -> new CartId("server-generated-cart"));
+
+    CartResult result = service.addItem(
+        principal("alice", "cart:write"),
+        new AddItemCommand(new ProductId("bob-cart"), new Quantity(1), Money.usd("12.50")));
+
+    assertThat(result.cart().id()).isEqualTo(new CartId("server-generated-cart"));
+    assertThat(authorizationClient.relationshipWrites())
+        .containsExactly(new Relationship(
+            new ResourceRef("cart", "server-generated-cart"), "owner", SubjectRef.user("alice")));
+  }
+
+  @Test
+  void first_add_fails_closed_when_relationship_provisioning_fails_and_does_not_save() {
+    RecordingCartRepository repository = new RecordingCartRepository(List.of());
+    RecordingAuthorizationClient authorizationClient = recordingClient(new AuthorizationClient() {
+      @Override
+      public AuthorizationDecision check(
+          SubjectRef subject, ResourceRef resource, Permission permission) {
+        return AuthorizationDecision.deny(DecisionTrace.resource(
+            false, subject, resource, permission, "relationship_missing"));
+      }
+
+      @Override
+      public void writeRelationship(Relationship relationship) {
+        throw new AuthorizationUnavailableException("SpiceDB unavailable");
+      }
+    });
+    CartApplicationService service = service(
+        repository,
+        authorizationClient,
+        () -> new CartId("generated-cart"));
+
+    assertThatThrownBy(() -> service.addItem(principal("carol", "cart:write"), addItemCommand()))
+        .isInstanceOf(AuthorizationDeniedException.class)
+        .hasMessageContaining("unavailable");
+
+    assertThat(authorizationClient.relationshipWrites())
+        .containsExactly(new Relationship(
+            new ResourceRef("cart", "generated-cart"), "owner", SubjectRef.user("carol")));
+    assertThat(repository.saveCount()).isZero();
+    assertThat(repository.findByOwnerSub("carol")).isEmpty();
+  }
+
+  @Test
   void remove_item_without_write_scope_denies_before_resource_check_and_save() {
     RecordingCartRepository repository = repositoryWithAliceItem();
     RecordingAuthorizationClient authorizationClient = authorizationClientWithAliceCartGrants();
@@ -155,10 +230,18 @@ class CartApplicationServiceTest {
 
   private static CartApplicationService service(
       CartRepository repository, AuthorizationClient authorizationClient) {
+    return service(repository, authorizationClient, () -> new CartId("generated-cart"));
+  }
+
+  private static CartApplicationService service(
+      CartRepository repository,
+      AuthorizationClient authorizationClient,
+      java.util.function.Supplier<CartId> cartIdGenerator) {
     return new CartApplicationService(
         repository,
         new ScopeAuthorizer(),
-        new ResourceAuthorizer(authorizationClient));
+        new ResourceAuthorizer(authorizationClient),
+        cartIdGenerator);
   }
 
   private static CommercePrincipal principal(String subject, String... scopes) {
@@ -200,6 +283,7 @@ class CartApplicationServiceTest {
 
     private final AuthorizationClient delegate;
     private final List<CheckRequest> requests = new ArrayList<>();
+    private final List<Relationship> relationshipWrites = new ArrayList<>();
 
     private RecordingAuthorizationClient(AuthorizationClient delegate) {
       this.delegate = delegate;
@@ -211,8 +295,23 @@ class CartApplicationServiceTest {
       return delegate.check(subject, resource, permission);
     }
 
+    @Override
+    public void writeRelationship(Relationship relationship) {
+      relationshipWrites.add(relationship);
+      delegate.writeRelationship(relationship);
+    }
+
+    @Override
+    public void deleteRelationship(Relationship relationship) {
+      delegate.deleteRelationship(relationship);
+    }
+
     List<CheckRequest> requests() {
       return List.copyOf(requests);
+    }
+
+    List<Relationship> relationshipWrites() {
+      return List.copyOf(relationshipWrites);
     }
   }
 

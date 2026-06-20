@@ -1,7 +1,8 @@
 package com.example.commerce.cart.testfixture;
 
+import com.example.commerce.security.AuthorizationClient;
+import com.example.commerce.security.Relationship;
 import com.example.commerce.security.ResourceRef;
-import com.example.commerce.security.SpiceDbAuthorizationClient;
 import com.example.commerce.security.SubjectRef;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
@@ -16,25 +17,25 @@ final class SpiceDbCartRelationshipFixture implements CartRelationshipFixture {
   private static final SubjectRef BOB = SubjectRef.user("bob");
   private static final String OWNER = "owner";
 
-  private final SpiceDbAuthorizationClient authorizationClient;
+  private final AuthorizationClient authorizationClient;
 
-  SpiceDbCartRelationshipFixture(SpiceDbAuthorizationClient authorizationClient) {
+  SpiceDbCartRelationshipFixture(AuthorizationClient authorizationClient) {
     this.authorizationClient = authorizationClient;
   }
 
   @Override
   public void restoreLocalSeed() {
     restoreAliceOwner();
-    authorizationClient.touchRelationship(BOB_CART, OWNER, BOB);
+    authorizationClient.writeRelationship(new Relationship(BOB_CART, OWNER, BOB));
   }
 
   @Override
   public void restoreAliceOwner() {
-    authorizationClient.touchRelationship(ALICE_CART, OWNER, ALICE);
+    authorizationClient.writeRelationship(new Relationship(ALICE_CART, OWNER, ALICE));
   }
 
   @Override
   public void removeAliceOwner() {
-    authorizationClient.deleteRelationship(ALICE_CART, OWNER, ALICE);
+    authorizationClient.deleteRelationship(new Relationship(ALICE_CART, OWNER, ALICE));
   }
 }

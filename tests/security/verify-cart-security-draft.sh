@@ -71,6 +71,31 @@ unavailable_reason() {
         printf 'missing-scope fixture unavailable: add local/test-only owner token without required cart scope'
       fi
       ;;
+    SEC-OWNERSHIP-PROVISIONED-FOR-CALLER)
+      if ! has_cart_service; then
+        printf 'cart-service unavailable: create-on-first-add cannot provision cart ownership'
+      elif ! has_gateway_cart_route; then
+        printf 'APISIX /api/cart route missing: cannot prove first add through the BFF gateway'
+      else
+        printf 'dynamic ownership fixture unavailable: use a scoped existing IdP user with no seeded cart'
+      fi
+      ;;
+    SEC-NO-RESOURCE-HIJACK)
+      if ! has_cart_service; then
+        printf 'cart-service unavailable: no create path exists to test server-generated cart ids'
+      elif ! has_gateway_cart_route; then
+        printf 'APISIX /api/cart route missing: cannot prove attacker-chosen ids are ignored through the gateway'
+      else
+        printf 'resource hijack fixture unavailable: post first add with attacker-looking body data and assert generated cart id'
+      fi
+      ;;
+    SEC-PROVISIONING-FAILS-CLOSED)
+      if ! has_cart_service; then
+        printf 'cart-service unavailable: no provisioning failure path exists to test'
+      else
+        printf 'provisioning failure contract unavailable: add service test where AuthorizationClient.writeRelationship fails before save'
+      fi
+      ;;
     SEC-SPOOFED-IDENTITY-HEADERS)
       if ! has_gateway_cart_route; then
         printf 'APISIX /api/cart route missing: cannot prove unsafe identity headers are stripped'
