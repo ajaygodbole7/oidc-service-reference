@@ -75,6 +75,7 @@ check_absent_in HARNESS-NO-NPM-RANGES '"[~^*]' \
 sh scripts/verify-commerce-security-common.sh
 sh scripts/verify-spicedb-static.sh
 sh scripts/verify-cart-service.sh
+sh scripts/verify-catalog-service.sh
 sh tests/security/verify-cart-security-draft.sh
 sh tests/security/verify-catalog-security-draft.sh
 
