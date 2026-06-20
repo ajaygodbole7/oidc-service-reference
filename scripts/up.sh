@@ -8,7 +8,7 @@ cd "$ROOT"
 # Bring up the local reference stack for development:
 #   - Browser ingress: APISIX (:9080)
 #   - Authorization Server: Keycloak (:8080)
-#   - Internal only: Auth Service, Cart Service, Valkey, SpiceDB
+#   - Internal only: Auth Service, domain services, Valkey, SpiceDB, Postgres
 # Afterwards run `pnpm run dev` in frontend/ for the SPA (Vite, :5173).
 #
 # The dev secrets below are the loud CHANGE_BEFORE_DEPLOY sentinels — safe only
@@ -32,7 +32,7 @@ GATEWAY_CLIENT_SECRET="$DEV_GATEWAY_SECRET" CSRF_SIGNING_KEY="$DEV_CSRF_KEY" \
 info "starting compose stack"
 SPICEDB_PRESHARED_KEY="${SPICEDB_PRESHARED_KEY:-LOCAL_DEV_SPICEDB_PRESHARED_KEY__CHANGE_BEFORE_DEPLOY}" \
   CSRF_SIGNING_KEY="$DEV_CSRF_KEY" docker compose up -d --build \
-  keycloak valkey spicedb auth-service cart-service apisix
+  keycloak valkey spicedb postgres auth-service cart-service catalog-service payment-service order-service apisix
 
 info "refreshing APISIX after service convergence"
 docker compose restart apisix >/dev/null
@@ -47,8 +47,12 @@ cat <<EOF
   Keycloak                  : http://localhost:8080  (admin/admin)
   Auth Service              : internal service auth-service:8081
   Cart Service              : internal service cart-service:8083
+  Catalog Service           : internal service catalog-service:8084
+  Payment Service           : internal service payment-service:8085
+  Order Service             : internal service order-service:8086
   Valkey                    : internal service valkey:6379
   SpiceDB                   : localhost:50051 (local dev, no TLS)
+  Postgres                  : internal service postgres:5432
 
   Next: cd frontend && pnpm run dev  ->  http://127.0.0.1:5173
   Stop: scripts/down.sh

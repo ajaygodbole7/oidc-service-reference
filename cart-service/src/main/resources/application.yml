@@ -19,3 +19,11 @@ cart:
     target: ${CART_SPICEDB_TARGET:spicedb:50051}
     preshared-key: ${CART_SPICEDB_PRESHARED_KEY:LOCAL_DEV_SPICEDB_PRESHARED_KEY__CHANGE_BEFORE_DEPLOY}
     plaintext: ${CART_SPICEDB_PLAINTEXT:true}
+
+spring:
+  datasource:
+    url: ${CART_DATASOURCE_URL:jdbc:postgresql://postgres:5432/cart_db}
+    username: ${CART_DATASOURCE_USERNAME:commerce}
+    password: ${CART_DATASOURCE_PASSWORD:LOCAL_DEV_POSTGRES_PASSWORD__CHANGE_BEFORE_DEPLOY}
+  flyway:
+    enabled: true

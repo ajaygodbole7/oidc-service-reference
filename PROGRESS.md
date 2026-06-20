@@ -22,9 +22,15 @@ Every session must leave these sections populated:
 
 ## Current slice
 
-Order/payment vertical slice — ACCEPTED 2026-06-20 (live SEC gate green: all five
-SEC-PAYMENT-* / SEC-CHECKOUT-* cases passed in a watched run). This is the last planned
-domain slice; Postgres persistence remains deferred until a human directs it.
+Postgres persistence — ACCEPTED 2026-06-20 13:50 PDT. Catalog, cart, order, and payment
+now use local Postgres with Flyway migrations and Spring Data JDBC repositories. Order
+idempotency is Postgres-backed with an insert-only claim, nullable `order_id`, and
+transactional persist+link before the post-commit SpiceDB order-owner write. The watched
+live re-gates are green for cart, catalog, and order/payment, so Postgres did not replace
+the four-gate ladder.
+
+Order/payment vertical slice — ACCEPTED 2026-06-20 09:05 PDT (live SEC gate green: all
+five `SEC-PAYMENT-*` / `SEC-CHECKOUT-*` cases passed in a watched run).
 
 Scaffold from `../oidc-reference` is DONE and accepted (2026-06-17 18:15): stack boots
 healthy and `SEC-NO-BROWSER-TOKENS` passed live. Authorization substrate is DONE and
@@ -43,71 +49,44 @@ writes succeed only through `catalog:write` plus SpiceDB `store:main#manage`.
 
 ## Exact next action
 
-Integrate the active order-service and payment-service worker outputs, then run the narrow
-module verifiers before touching Compose or live Docker. The first order/payment slice is
-pinned to:
+Choose the next platform-verification slice from `PLAN.md` before adding more app surface.
+The best next step is to collapse the now-proven live SEC harnesses into a single
+orchestrated local acceptance command or update `verify-all.sh` so it can optionally run the
+live suite after the stack is healthy. Keep Docker rebuilds controlled: the host was at about
+`3.5 GiB` free after this slice, and `scripts/up.sh` still rebuilds images by default.
+
+Fresh agents should start with:
 
 ```sh
-SEC-PAYMENT-NO-BROWSER-ROUTE
-SEC-PAYMENT-WRONG-CLIENT
-SEC-PAYMENT-REJECTS-USER-TOKEN
-SEC-CHECKOUT-IDEMPOTENT-REPLAY
-SEC-CHECKOUT-IDEMPOTENCY-COLLISION
-```
-
-Order-service and payment-service workers are active under the ownership rules in
-`AGENTS.md`. Keep testing sequential when Maven `clean` or the full Compose stack is
-involved.
-
-Useful acceptance evidence to preserve:
-
-```sh
-sh scripts/verify-catalog-service.sh
-sh tests/security/verify-catalog-security-draft.sh
-cd frontend && ./node_modules/.bin/tsc --noEmit
-cd frontend && ./node_modules/.bin/vitest run src/App.test.tsx src/auth.test.ts src/architecture.test.ts
-sh tests/security/verify-catalog-security-live.sh SEC-CATALOG-ANONYMOUS-READ-ONLY
-sh scripts/verify-cart-service.sh
-sh tests/security/verify-cart-security-draft.sh
-sh scripts/verify-all.sh
-SMOKE_SKIP_DISCOVERY=1 sh authorization-server/tests/smoke.sh
 docker compose config --quiet
-cd frontend && corepack pnpm run typecheck
-cd frontend && corepack pnpm exec vitest run src/App.test.tsx src/auth.test.ts src/architecture.test.ts
-sh scripts/verify-cart-spicedb-live.sh
-E2E_CART_SKIP_UP=1 sh scripts/e2e-cart.sh
-sh tests/security/verify-cart-security-live.sh SEC-SPOOFED-IDENTITY-HEADERS
-sh tests/security/verify-cart-security-live.sh SEC-SCOPE-WITHOUT-RELATIONSHIP SEC-BROWSER-AUTHORIZATION-OVERWRITTEN SEC-RELATIONSHIP-REMOVAL-IMMEDIATE SEC-RELATIONSHIP-WITHOUT-SCOPE SEC-NON-COMMERCE-AUD
-sh tests/security/verify-cart-security-live.sh SEC-OWNERSHIP-PROVISIONED-FOR-CALLER SEC-NO-RESOURCE-HIJACK SEC-PROVISIONING-FAILS-CLOSED
-cd frontend && E2E_FULL_STACK=1 corepack pnpm exec playwright test tests/e2e/auth.spec.ts --grep SEC-NO-BROWSER-TOKENS
+sh scripts/verify-all.sh
 ```
 
 Next concrete implementation steps:
 1. Keep verifier runs sequential when they invoke Maven `clean`; parallel Maven gates can
    delete each other's reactor outputs.
-2. Do not rerun the full stack while free disk is near 3 GiB; Claude observed the catalog
-   stack run falling to roughly 0.5 GiB free.
-3. Do not rerun the full stack while free disk is near 3 GiB unless the next live gate needs
-   it; image rebuilds can drop the host below 1 GiB.
-4. Review worker patches for scope drift before integration; shared contracts remain
-   orchestrator-owned.
+2. Prefer `ORDER_PAYMENT_SECURITY_SKIP_UP=1`, `CATALOG_SECURITY_SKIP_UP=1`, and
+   `CART_SECURITY_SKIP_UP=1` against an already-running stack when disk is tight.
+3. Consider adding a no-build mode to `scripts/up.sh` before the next heavy live cycle.
+4. Do not let Postgres ownership columns become authorization shortcuts; every resource
+   access still runs the explicit scope and SpiceDB checks.
 
 Do not create runnable `scripts/agent-init.sh` or `scripts/agent-loop.sh` yet. Do not
-start the Postgres persistence slice yet.
+add CI/CD; this repo remains local-first.
 
 ## Acceptance gate
 
-The next order/payment slice can advance only when the first checkout/payment gates pass in
-a watched live run:
-- browser traffic cannot reach `/internal/payments/**`
-- Payment Service accepts only Order Service client-credentials tokens with
-  `aud=payment-service`, `azp/client_id=order-service`, and `payments:authorize`
-- user/browser `commerce-api` tokens are rejected by Payment Service
-- checkout requires `orders:write`, server-side current-cart resolution, SpiceDB
-  `cart:{resolvedCartId}#read@user:{sub}`, and an idempotency key
-- same idempotency key plus same body returns the same order without double-authorizing
-  payment
-- same idempotency key plus different body rejects before payment is called
+Postgres persistence is accepted because these gates passed in watched runs:
+- Compose starts `postgres:18.4` and initializes `catalog_db`, `cart_db`, `order_db`, and
+  `payment_db`.
+- Catalog, cart, order, and payment each have Flyway migrations, Spring Data JDBC
+  repositories, and Testcontainers-backed repository tests.
+- Order checkout claims idempotency before payment, links the order transactionally after
+  persistence, rejects same-key/different-body collisions before payment, and replays
+  same-key/same-body requests without double-authorizing payment.
+- Live cart/catalog/order-payment security harnesses remain green with Postgres enabled.
+- Postgres ownership data remains business data only; `ResourceAuthorizer`/SpiceDB remains
+  the gate-4 authority.
 
 ## Build checklist
 
@@ -138,17 +117,45 @@ a watched live run:
       and `store#manage` check. (Accepted 2026-06-20 07:35 PDT — catalog service local
       gates green, frontend typecheck/Vitest green, `verify-all.sh` local gates green, and
       live catalog browser/gateway harness passed all three cases.)
-- [ ] Build order and payment: checkout, S2S client credentials, idempotency, support
-      read, owner cancel, and payment rejection scenarios.
-- [ ] Add Postgres persistence: local Postgres, per-service database/schema,
+- [x] Build order and payment: checkout, S2S client credentials, idempotency, support
+      read, owner cancel, and payment rejection scenarios. (Accepted 2026-06-20 09:05 PDT —
+      order/payment live security harness passed all five pinned cases.)
+- [x] Add Postgres persistence: local Postgres, per-service database/schema,
       Flyway migrations, Spring Data JDBC repository implementations, and
-      Postgres-backed order/payment idempotency.
+      Postgres-backed order/payment idempotency. (Accepted 2026-06-20 13:50 PDT — service
+      verifiers, live cart/catalog/order-payment re-gates, `HARNESS-SERVICE-HEALTH`, and
+      `HARNESS-POSTGRES-INIT` green.)
 - [ ] Complete platform verification: SpiceDB-unavailable fail-closed, full
       security-verification suite, Security Trace evidence, stable harness check catalog,
       architecture checks, bounded/masked evidence, service-health summaries, and final
       docs.
 
 ## Verifier status
+
+Postgres persistence accepted 2026-06-20 13:50 PDT:
+
+```sh
+docker compose config --quiet
+sh scripts/verify-order-service.sh
+sh scripts/verify-cart-service.sh
+sh scripts/verify-catalog-service.sh
+sh scripts/verify-payment-service.sh
+ORDER_PAYMENT_SECURITY_SKIP_UP=1 sh tests/security/verify-order-payment-security-live.sh
+CATALOG_SECURITY_SKIP_UP=1 sh tests/security/verify-catalog-security-live.sh
+CART_SECURITY_SKIP_UP=1 sh tests/security/verify-cart-security-live.sh
+sh scripts/verify-all.sh
+```
+
+Result: PASS. `verify-all.sh` passed static harness checks, service-health summary,
+`HARNESS-POSTGRES-INIT`, and service module verifiers with Postgres-backed repository tests:
+cart 27 tests, catalog 17 tests, order 26 tests, payment 12 tests, plus
+`commerce-security-common` 32-test runs. The live SEC harnesses were run separately against
+the already-running stack to avoid rebuild churn on a low-disk host: order/payment passed all
+five `SEC-PAYMENT-*` / `SEC-CHECKOUT-*` cases, catalog passed
+`SEC-CATALOG-ANONYMOUS-READ-ONLY`, and cart passed all live cart `SEC-*` cases including
+dynamic ownership, no-resource-hijack, provisioning fail-closed, non-commerce audience, and
+relationship removal. `verify-all.sh` still reports live SEC rows as explicit `PENDING`
+because it does not orchestrate those live scripts itself yet.
 
 `commerce-security-common` JWT primitive — `clean test` green on host JDK 26
 (2026-06-17 19:19): enforcer rules pass (Java 26, dependencyConvergence, banned deps);
@@ -450,23 +457,24 @@ Completed 2026-06-18 cart review/fix fan-out:
   cart security harness.
 - Explorers mapped A1-A4 live wiring and checked for missed HIGH/MED risks.
 
-Active 2026-06-20:
-- Order-service worker owns `order-service/**` only.
-- Payment-service worker owns `payment-service/**` and `commerce-security-common/**` only.
+Completed 2026-06-20 Postgres continuation:
+- Exploratory subagents reviewed the Compose/gateway/script and order-idempotency seams.
+- The orchestrator integrated the order redesign, Postgres repositories, Compose/gateway
+  wiring, harness updates, and final watched verification.
+- No active subagents remain. Future fan-out should be scoped by service only after the next
+  shared contract is explicit.
 
-Cart and catalog are accepted. The orchestrator owns integration, root POM/Compose/gateway/
-realm wiring, live harnesses, `PROGRESS.md`, and final verification.
+Cart, catalog, order/payment, and Postgres persistence are accepted. The orchestrator owns
+integration, root POM/Compose/gateway/realm wiring, live harnesses, `PROGRESS.md`, and final
+verification.
 
 ## Blockers
 
-- Host disk tight: `/System/Volumes/Data` at about 4.1 GiB free / 99% used after the
-  2026-06-20 catalog acceptance cleanup. The catalog live run dropped free space to about
-  1.0 GiB before teardown/prune. Do not run full-stack rebuilds casually; check disk first
-  and prune after live gates.
+- Host disk tight: `/System/Volumes/Data` at about 3.5 GiB free / 99% used after the
+  2026-06-20 Postgres acceptance verification. Do not run full-stack rebuilds casually;
+  check disk first, prefer skip-up/no-build modes, and prune after live gates.
 - Local shell has Node 24.12.0; `frontend/package.json` pins Node 26.3.0, so pnpm emits
   an engine warning until Node is switched.
-- Postgres persistence is intentionally deferred until order/payment service flows are
-  shaped or the human explicitly moves it earlier.
 - Harness evidence belongs in verifier output, tests, scripts, and `PROGRESS.md`.
 - Future `scripts/agent-init.sh` and `scripts/agent-loop.sh` are intentionally deferred
   until the stack and verifier exist.
@@ -477,11 +485,11 @@ realm wiring, live harnesses, `PROGRESS.md`, and final verification.
 ## Session handoff
 
 The scaffold, authorization-substrate, cart vertical slice, dynamic cart ownership
-provisioning, and catalog vertical slice are accepted locally. The order/payment acceptance
-map is pinned and two workers are active. Next integrate order-service/payment-service module
-patches, then add orchestrator-owned root POM, Keycloak, APISIX, Compose, and live harness
-wiring. Keep the four gates visible in code and traces. Do not start Postgres until
-order/payment service flows are shaped or the human explicitly moves persistence earlier.
+provisioning, catalog vertical slice, order/payment vertical slice, and Postgres persistence
+slice are accepted locally. The stack was left running for verification and should be torn
+down/pruned after commit if no immediate follow-up needs it. Next work should be a
+platform-verification/harness slice or frontend/UI slice, not another persistence migration.
+Keep the four gates visible in code and traces; Postgres owner columns are not authorization.
 
 ## Session log
 
@@ -697,3 +705,24 @@ Append-only, timestamped chronology (newest at the bottom); captures non-commit 
   needed a Docker Desktop clean restart mid-effort (the 9-container stack exhausted host disk to
   ~0.27 GiB); the accepting run completed at ~7.8→5.8 GiB. Tearing down + pruning after the
   acceptance commit. Next: no further slice without human direction; Postgres stays deferred.
+- 2026-06-20 13:50 PDT — Codex — continued from Claude's Postgres handoff and accepted the
+  Postgres persistence slice. Catalog, cart, order, and payment now use local
+  `postgres:18.4` with per-service DBs, Flyway migrations, Spring Data JDBC repositories,
+  application datasource config, and Testcontainers repository coverage. Order was the
+  careful redesign: idempotency records now claim `(subject, idempotency_key)` before
+  payment, keep `order_id` nullable while in-flight, link the persisted order
+  transactionally, replay exact duplicate bodies without another payment call, and reject
+  same-key/different-body collisions before payment. Found and fixed a real Postgres 18
+  Compose issue: the named volume cannot mount at `/var/lib/postgresql/data`; changed it to
+  `/var/lib/postgresql` and recreated the disposable local dev volume. Verified green:
+  `docker compose config --quiet`, `sh scripts/verify-order-service.sh`,
+  `sh scripts/verify-cart-service.sh`, `sh scripts/verify-catalog-service.sh`,
+  `sh scripts/verify-payment-service.sh`, `ORDER_PAYMENT_SECURITY_SKIP_UP=1 sh
+  tests/security/verify-order-payment-security-live.sh`, `CATALOG_SECURITY_SKIP_UP=1 sh
+  tests/security/verify-catalog-security-live.sh`, `CART_SECURITY_SKIP_UP=1 sh
+  tests/security/verify-cart-security-live.sh`, and `sh scripts/verify-all.sh` while the
+  stack was healthy. `verify-all.sh` passed `HARNESS-SERVICE-HEALTH` and
+  `HARNESS-POSTGRES-INIT`; it still lists live SEC rows as explicit PENDING because it does
+  not yet orchestrate those live scripts itself. Docker disk stayed tight at about 3.5 GiB
+  free after the run, so teardown/prune should follow if no immediate live follow-up is
+  needed.

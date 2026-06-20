@@ -29,6 +29,7 @@ public final class OrderApplicationService {
   private final OrderRepository orderRepository;
   private final CartLookup cartLookup;
   private final IdempotencyRepository idempotencyRepository;
+  private final OrderCheckoutPersistence checkoutPersistence;
   private final PaymentClient paymentClient;
   private final ScopeAuthorizer scopeAuthorizer;
   private final ResourceAuthorizer resourceAuthorizer;
@@ -39,6 +40,7 @@ public final class OrderApplicationService {
       OrderRepository orderRepository,
       CartLookup cartLookup,
       IdempotencyRepository idempotencyRepository,
+      OrderCheckoutPersistence checkoutPersistence,
       PaymentClient paymentClient,
       ScopeAuthorizer scopeAuthorizer,
       ResourceAuthorizer resourceAuthorizer) {
@@ -46,6 +48,7 @@ public final class OrderApplicationService {
         orderRepository,
         cartLookup,
         idempotencyRepository,
+        checkoutPersistence,
         paymentClient,
         scopeAuthorizer,
         resourceAuthorizer,
@@ -59,12 +62,33 @@ public final class OrderApplicationService {
       IdempotencyRepository idempotencyRepository,
       PaymentClient paymentClient,
       ScopeAuthorizer scopeAuthorizer,
+      ResourceAuthorizer resourceAuthorizer) {
+    this(
+        orderRepository,
+        cartLookup,
+        idempotencyRepository,
+        new OrderCheckoutPersistence(orderRepository, idempotencyRepository),
+        paymentClient,
+        scopeAuthorizer,
+        resourceAuthorizer,
+        () -> new OrderId(UUID.randomUUID().toString()),
+        Clock.systemUTC());
+  }
+
+  public OrderApplicationService(
+      OrderRepository orderRepository,
+      CartLookup cartLookup,
+      IdempotencyRepository idempotencyRepository,
+      OrderCheckoutPersistence checkoutPersistence,
+      PaymentClient paymentClient,
+      ScopeAuthorizer scopeAuthorizer,
       ResourceAuthorizer resourceAuthorizer,
       Supplier<OrderId> orderIdGenerator,
       Clock clock) {
     this.orderRepository = orderRepository;
     this.cartLookup = cartLookup;
     this.idempotencyRepository = idempotencyRepository;
+    this.checkoutPersistence = checkoutPersistence;
     this.paymentClient = paymentClient;
     this.scopeAuthorizer = scopeAuthorizer;
     this.resourceAuthorizer = resourceAuthorizer;
@@ -82,15 +106,9 @@ public final class OrderApplicationService {
     traces.add(resourceAuthorizer.requireAllowed(principal, cartResource(cart), CART_READ));
 
     String requestFingerprint = command.requestFingerprint(cart);
-    IdempotencyRecord existing = idempotencyRepository.find(principal.subject(), idempotencyKey)
-        .orElse(null);
-    if (existing != null) {
-      if (!existing.requestFingerprint().equals(requestFingerprint)) {
-        throw new IdempotencyConflictException("idempotency key was already used for a different request");
-      }
-      Order existingOrder = orderRepository.findById(existing.orderId())
-          .orElseThrow(() -> new OrderNotFoundException("idempotent order not found: " + existing.orderId().value()));
-      return new OrderResult(existingOrder, List.copyOf(traces));
+    boolean claimed = idempotencyRepository.claim(principal.subject(), idempotencyKey, requestFingerprint);
+    if (!claimed) {
+      return replayClaimedCheckout(principal.subject(), idempotencyKey, requestFingerprint, traces);
     }
 
     OrderId orderId = orderIdGenerator.get();
@@ -109,12 +127,10 @@ public final class OrderApplicationService {
         cart.total(),
         authorization.authorizationId(),
         clock.instant());
+    Order saved = checkoutPersistence.persistAndLink(principal.subject(), idempotencyKey, order);
     traces.add(resourceAuthorizer.writeRelationship(
         new Relationship(orderResource(orderId), "owner", SubjectRef.user(principal.subject()))));
-    orderRepository.save(order);
-    idempotencyRepository.save(new IdempotencyRecord(
-        principal.subject(), idempotencyKey, requestFingerprint, order.id()));
-    return new OrderResult(order, List.copyOf(traces));
+    return new OrderResult(saved, List.copyOf(traces));
   }
 
   public OrderResult getOrder(CommercePrincipal principal, OrderId orderId) {
@@ -141,5 +157,21 @@ public final class OrderApplicationService {
 
   private static ResourceRef orderResource(OrderId orderId) {
     return new ResourceRef("order", orderId.value());
+  }
+
+  private OrderResult replayClaimedCheckout(
+      String subject, IdempotencyKey idempotencyKey, String requestFingerprint, List<DecisionTrace> traces) {
+    IdempotencyRecord existing = idempotencyRepository.find(subject, idempotencyKey)
+        .orElseThrow(() -> new IllegalStateException("idempotency claim disappeared"));
+    if (!existing.requestFingerprint().equals(requestFingerprint)) {
+      throw new IdempotencyConflictException("idempotency key was already used for a different request");
+    }
+    OrderId linkedOrderId = existing.orderId();
+    if (linkedOrderId == null) {
+      throw new IdempotencyConflictException("idempotency key is already processing");
+    }
+    Order existingOrder = orderRepository.findById(linkedOrderId)
+        .orElseThrow(() -> new OrderNotFoundException("idempotent order not found: " + linkedOrderId.value()));
+    return new OrderResult(existingOrder, List.copyOf(traces));
   }
 }

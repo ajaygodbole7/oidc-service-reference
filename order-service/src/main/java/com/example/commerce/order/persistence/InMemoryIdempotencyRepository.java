@@ -1,6 +1,7 @@
 package com.example.commerce.order.persistence;
 
 import com.example.commerce.order.domain.IdempotencyKey;
+import com.example.commerce.order.domain.OrderId;
 import com.example.commerce.order.service.IdempotencyRecord;
 import com.example.commerce.order.service.IdempotencyRepository;
 import java.util.LinkedHashMap;
@@ -17,8 +18,23 @@ public final class InMemoryIdempotencyRepository implements IdempotencyRepositor
   }
 
   @Override
-  public void save(IdempotencyRecord record) {
-    records.put(new Key(record.subject(), record.key().value()), record);
+  public boolean claim(String subject, IdempotencyKey key, String requestFingerprint) {
+    Key mapKey = new Key(subject, key.value());
+    if (records.containsKey(mapKey)) {
+      return false;
+    }
+    records.put(mapKey, new IdempotencyRecord(subject, key, requestFingerprint, null));
+    return true;
+  }
+
+  @Override
+  public void linkOrder(String subject, IdempotencyKey key, OrderId orderId) {
+    Key mapKey = new Key(subject, key.value());
+    IdempotencyRecord existing = records.get(mapKey);
+    if (existing == null) {
+      throw new IllegalStateException("idempotency record not claimed");
+    }
+    records.put(mapKey, new IdempotencyRecord(subject, key, existing.requestFingerprint(), orderId));
   }
 
   private record Key(String subject, String key) {

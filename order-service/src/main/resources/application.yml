@@ -1,7 +1,10 @@
 server:
-  port: 8080
+  port: ${SERVER_PORT:8086}
 
 management:
+  server:
+    port: ${MANAGEMENT_PORT:9086}
+    address: ${MANAGEMENT_ADDRESS:127.0.0.1}
   endpoints:
     web:
       exposure:
@@ -21,3 +24,11 @@ order:
     token-uri: ${ORDER_PAYMENT_TOKEN_URI:http://keycloak:8080/realms/oidc-service-reference/protocol/openid-connect/token}
     client-id: ${ORDER_PAYMENT_CLIENT_ID:order-service}
     client-secret: ${ORDER_PAYMENT_CLIENT_SECRET:LOCAL_DEV_SERVICE_CLIENT_SECRET__CHANGE_BEFORE_DEPLOY}
+
+spring:
+  datasource:
+    url: ${ORDER_DATASOURCE_URL:jdbc:postgresql://postgres:5432/order_db}
+    username: ${ORDER_DATASOURCE_USERNAME:commerce}
+    password: ${ORDER_DATASOURCE_PASSWORD:LOCAL_DEV_POSTGRES_PASSWORD__CHANGE_BEFORE_DEPLOY}
+  flyway:
+    enabled: true

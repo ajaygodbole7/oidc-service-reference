@@ -31,7 +31,10 @@ root reactor or install that module before running this module standalone.
 - `SEC-ORDER-SUPPORT-READ-NOT-CANCEL`
 
 ## Gotchas
-- In-memory persistence is deliberate for this slice. Postgres-backed repositories and
-  transactional idempotency are a later verified slice.
+- Order persistence is Postgres-backed in this slice. Checkout idempotency uses a unique
+  `(subject, idempotency_key)` claim row, then links the committed order in the
+  `OrderCheckoutPersistence` transaction.
+- `CartLookup` remains a local fixture/port in order-service; cart ownership is still
+  enforced by the explicit SpiceDB cart read gate before payment.
 - A support user may read an order only when SpiceDB grants `order#read`; support cancel is
   denied unless SpiceDB grants `order#cancel`.

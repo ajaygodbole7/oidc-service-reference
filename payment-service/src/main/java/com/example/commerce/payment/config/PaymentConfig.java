@@ -1,7 +1,8 @@
 package com.example.commerce.payment.config;
 
 import com.example.commerce.payment.domain.PaymentAuthorizationRepository;
-import com.example.commerce.payment.persistence.InMemoryPaymentAuthorizationRepository;
+import com.example.commerce.payment.persistence.PaymentAuthorizationRowRepository;
+import com.example.commerce.payment.persistence.PostgresPaymentAuthorizationRepository;
 import com.example.commerce.payment.service.PaymentApplicationService;
 import com.example.commerce.security.ServiceJwtValidator;
 import java.net.URI;
@@ -9,13 +10,15 @@ import java.time.Clock;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 
 @Configuration
 class PaymentConfig {
 
   @Bean
-  PaymentAuthorizationRepository paymentAuthorizationRepository() {
-    return new InMemoryPaymentAuthorizationRepository();
+  PaymentAuthorizationRepository paymentAuthorizationRepository(
+      PaymentAuthorizationRowRepository rows, JdbcAggregateTemplate aggregateTemplate) {
+    return new PostgresPaymentAuthorizationRepository(rows, aggregateTemplate);
   }
 
   @Bean

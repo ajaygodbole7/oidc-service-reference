@@ -68,9 +68,11 @@ class OrderApplicationServiceTest {
   @Test
   void checkout_resolves_current_user_cart_server_side_and_checks_cart_read_before_payment() {
     RecordingAuthorizationClient authorizationClient = authorizationClientWithAliceCartRead();
-    RecordingPaymentClient paymentClient = new RecordingPaymentClient();
+    RecordingIdempotencyRepository idempotencyRepository = new RecordingIdempotencyRepository();
+    RecordingPaymentClient paymentClient = new RecordingPaymentClient(idempotencyRepository);
     RecordingOrderRepository orderRepository = new RecordingOrderRepository(List.of());
-    OrderApplicationService service = service(orderRepository, cartLookup(), authorizationClient, paymentClient);
+    OrderApplicationService service = service(
+        orderRepository, cartLookup(), idempotencyRepository, authorizationClient, paymentClient);
 
     OrderResult result = service.checkout(
         principal("alice", "orders:write"),
@@ -82,10 +84,48 @@ class OrderApplicationServiceTest {
     assertThat(paymentClient.commands())
         .extracting(PaymentAuthorizationCommand::cartId)
         .containsExactly(new CartId("alice-cart"));
+    assertThat(paymentClient.idempotencyWasClaimedBeforePayment()).isTrue();
     assertThat(authorizationClient.requests())
         .containsExactly(new CheckRequest("user:alice", "cart:alice-cart", "read"));
     assertThat(authorizationClient.relationshipWrites())
         .containsExactly(new Relationship(GENERATED_ORDER, "owner", SubjectRef.user("alice")));
+  }
+
+  @Test
+  void checkout_claims_idempotency_before_payment() {
+    RecordingIdempotencyRepository idempotencyRepository = new RecordingIdempotencyRepository();
+    RecordingPaymentClient paymentClient = new RecordingPaymentClient(idempotencyRepository);
+    OrderApplicationService service = service(
+        new RecordingOrderRepository(List.of()),
+        cartLookup(),
+        idempotencyRepository,
+        authorizationClientWithAliceCartRead(),
+        paymentClient);
+
+    service.checkout(principal("alice", "orders:write"), checkoutCommand(), new IdempotencyKey("key-1"));
+
+    assertThat(idempotencyRepository.claimCount()).isEqualTo(1);
+    assertThat(paymentClient.idempotencyWasClaimedBeforePayment()).isTrue();
+  }
+
+  @Test
+  void checkout_does_not_call_payment_when_idempotency_claim_fails() {
+    RecordingPaymentClient paymentClient = new RecordingPaymentClient();
+    OrderApplicationService service = service(
+        new RecordingOrderRepository(List.of()),
+        cartLookup(),
+        new FailingIdempotencyRepository(),
+        authorizationClientWithAliceCartRead(),
+        paymentClient);
+
+    assertThatThrownBy(() -> service.checkout(
+            principal("alice", "orders:write"),
+            checkoutCommand(),
+            new IdempotencyKey("key-1")))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("idempotency unavailable");
+
+    assertThat(paymentClient.commands()).isEmpty();
   }
 
   @Test
@@ -210,10 +250,25 @@ class OrderApplicationServiceTest {
       CartLookup cartLookup,
       AuthorizationClient authorizationClient,
       PaymentClient paymentClient) {
-    return new OrderApplicationService(
+    return service(
         orderRepository,
         cartLookup,
         new RecordingIdempotencyRepository(),
+        authorizationClient,
+        paymentClient);
+  }
+
+  private static OrderApplicationService service(
+      OrderRepository orderRepository,
+      CartLookup cartLookup,
+      IdempotencyRepository idempotencyRepository,
+      AuthorizationClient authorizationClient,
+      PaymentClient paymentClient) {
+    return new OrderApplicationService(
+        orderRepository,
+        cartLookup,
+        idempotencyRepository,
+        new OrderCheckoutPersistence(orderRepository, idempotencyRepository),
         paymentClient,
         new ScopeAuthorizer(),
         new ResourceAuthorizer(authorizationClient),
@@ -328,6 +383,8 @@ class OrderApplicationServiceTest {
   private static final class RecordingIdempotencyRepository implements IdempotencyRepository {
 
     private final Map<String, IdempotencyRecord> records = new LinkedHashMap<>();
+    private int claimCount;
+    private int linkCount;
 
     @Override
     public Optional<IdempotencyRecord> find(String subject, IdempotencyKey key) {
@@ -335,8 +392,51 @@ class OrderApplicationServiceTest {
     }
 
     @Override
-    public void save(IdempotencyRecord record) {
-      records.put(record.subject() + ":" + record.key().value(), record);
+    public boolean claim(String subject, IdempotencyKey key, String requestFingerprint) {
+      String mapKey = subject + ":" + key.value();
+      if (records.containsKey(mapKey)) {
+        return false;
+      }
+      claimCount++;
+      records.put(mapKey, new IdempotencyRecord(subject, key, requestFingerprint, null));
+      return true;
+    }
+
+    @Override
+    public void linkOrder(String subject, IdempotencyKey key, OrderId orderId) {
+      String mapKey = subject + ":" + key.value();
+      IdempotencyRecord existing = records.get(mapKey);
+      if (existing == null) {
+        throw new IllegalStateException("idempotency record not claimed");
+      }
+      linkCount++;
+      records.put(mapKey, new IdempotencyRecord(subject, key, existing.requestFingerprint(), orderId));
+    }
+
+    int claimCount() {
+      return claimCount;
+    }
+
+    int linkCount() {
+      return linkCount;
+    }
+  }
+
+  private static final class FailingIdempotencyRepository implements IdempotencyRepository {
+
+    @Override
+    public Optional<IdempotencyRecord> find(String subject, IdempotencyKey key) {
+      return Optional.empty();
+    }
+
+    @Override
+    public boolean claim(String subject, IdempotencyKey key, String requestFingerprint) {
+      throw new IllegalStateException("idempotency unavailable");
+    }
+
+    @Override
+    public void linkOrder(String subject, IdempotencyKey key, OrderId orderId) {
+      throw new IllegalStateException("idempotency unavailable");
     }
   }
 
@@ -369,15 +469,32 @@ class OrderApplicationServiceTest {
   private static final class RecordingPaymentClient implements PaymentClient {
 
     private final List<PaymentAuthorizationCommand> commands = new ArrayList<>();
+    private final RecordingIdempotencyRepository idempotencyRepository;
+    private boolean idempotencyWasClaimedBeforePayment;
+
+    private RecordingPaymentClient() {
+      this(null);
+    }
+
+    private RecordingPaymentClient(RecordingIdempotencyRepository idempotencyRepository) {
+      this.idempotencyRepository = idempotencyRepository;
+    }
 
     @Override
     public PaymentAuthorization authorize(PaymentAuthorizationCommand command) {
       commands.add(command);
+      if (idempotencyRepository != null) {
+        idempotencyWasClaimedBeforePayment = idempotencyRepository.claimCount() > 0;
+      }
       return new PaymentAuthorization("auth-" + command.orderId().value());
     }
 
     List<PaymentAuthorizationCommand> commands() {
       return List.copyOf(commands);
+    }
+
+    boolean idempotencyWasClaimedBeforePayment() {
+      return idempotencyWasClaimedBeforePayment;
     }
   }
 }

@@ -14,6 +14,7 @@ warn_low_disk 3
 GATEWAY_CLIENT_SECRET="${GATEWAY_CLIENT_SECRET:-LOCAL_DEV_GATEWAY_CLIENT_SECRET__CHANGE_BEFORE_DEPLOY}"
 TOKEN_URL="http://keycloak:8080/realms/oidc-service-reference/protocol/openid-connect/token"
 PAYMENT_URL="http://payment-service:8085/internal/payments/authorize"
+ORDER_PAYMENT_HARNESS_RUN_ID="${ORDER_PAYMENT_HARNESS_RUN_ID:-order-payment-$(date +%Y%m%d%H%M%S)}"
 
 requested="${*:-all}"
 
@@ -112,6 +113,7 @@ if should_run SEC-CHECKOUT-IDEMPOTENT-REPLAY || should_run SEC-CHECKOUT-IDEMPOTE
   (
     cd "$root/frontend"
     export E2E_FULL_STACK=1
+    export ORDER_PAYMENT_HARNESS_RUN_ID
     run_pnpm exec playwright test tests/e2e/order-live.spec.ts --grep "SEC-CHECKOUT"
   )
   pass SEC-CHECKOUT-IDEMPOTENT-REPLAY "live checkout replay verifier passed"

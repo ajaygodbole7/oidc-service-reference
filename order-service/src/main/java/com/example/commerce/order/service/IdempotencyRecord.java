@@ -3,12 +3,13 @@ package com.example.commerce.order.service;
 import com.example.commerce.order.domain.IdempotencyKey;
 import com.example.commerce.order.domain.OrderId;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
 public record IdempotencyRecord(
     String subject,
     IdempotencyKey key,
     String requestFingerprint,
-    OrderId orderId) {
+    @Nullable OrderId orderId) {
 
   public IdempotencyRecord {
     if (subject == null || subject.isBlank()) {
@@ -18,6 +19,5 @@ public record IdempotencyRecord(
     if (requestFingerprint == null || requestFingerprint.isBlank()) {
       throw new IllegalArgumentException("requestFingerprint is required");
     }
-    Objects.requireNonNull(orderId, "orderId");
   }
 }

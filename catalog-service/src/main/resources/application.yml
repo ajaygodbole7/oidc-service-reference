@@ -19,3 +19,11 @@ catalog:
     target: ${CATALOG_SPICEDB_TARGET:spicedb:50051}
     preshared-key: ${CATALOG_SPICEDB_PRESHARED_KEY:LOCAL_DEV_SPICEDB_PRESHARED_KEY__CHANGE_BEFORE_DEPLOY}
     plaintext: ${CATALOG_SPICEDB_PLAINTEXT:true}
+
+spring:
+  datasource:
+    url: ${CATALOG_DATASOURCE_URL:jdbc:postgresql://postgres:5432/catalog_db}
+    username: ${CATALOG_DATASOURCE_USERNAME:commerce}
+    password: ${CATALOG_DATASOURCE_PASSWORD:LOCAL_DEV_POSTGRES_PASSWORD__CHANGE_BEFORE_DEPLOY}
+  flyway:
+    enabled: true

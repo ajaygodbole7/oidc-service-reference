@@ -5,8 +5,7 @@ name: oidc-service-reference
 #   - http://127.0.0.1:9080  -> APISIX gateway for /auth/*
 #   - http://127.0.0.1:8080  -> Keycloak realm discovery/login
 #
-# Cart is the first domain service. Postgres is added in a later slice after the
-# cart authorization ladder is proven with in-memory repositories.
+# Domain services persist to local Postgres; Valkey remains the BFF session store.
 
 services:
   keycloak:
@@ -68,6 +67,24 @@ services:
       retries: 12
       start_period: 10s
 
+  postgres:
+    image: postgres:18.4
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-commerce}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-LOCAL_DEV_POSTGRES_PASSWORD__CHANGE_BEFORE_DEPLOY}
+      POSTGRES_DB: commerce
+    volumes:
+      - postgres-data:/var/lib/postgresql
+      - ./scripts/postgres-init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - oidc-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-commerce} -d commerce"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
   auth-service:
     build:
       context: ./auth-service
@@ -122,11 +139,16 @@ services:
       CART_SPICEDB_TARGET: spicedb:50051
       CART_SPICEDB_PRESHARED_KEY: ${SPICEDB_PRESHARED_KEY:-LOCAL_DEV_SPICEDB_PRESHARED_KEY__CHANGE_BEFORE_DEPLOY}
       CART_SPICEDB_PLAINTEXT: "true"
+      CART_DATASOURCE_URL: jdbc:postgresql://postgres:5432/cart_db
+      CART_DATASOURCE_USERNAME: ${POSTGRES_USER:-commerce}
+      CART_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-LOCAL_DEV_POSTGRES_PASSWORD__CHANGE_BEFORE_DEPLOY}
       SPRING_PROFILES_ACTIVE: ${CART_SERVICE_SPRING_PROFILES_ACTIVE:-local}
     depends_on:
       keycloak:
         condition: service_healthy
       spicedb:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     networks:
       - oidc-internal
@@ -151,11 +173,16 @@ services:
       CATALOG_SPICEDB_TARGET: spicedb:50051
       CATALOG_SPICEDB_PRESHARED_KEY: ${SPICEDB_PRESHARED_KEY:-LOCAL_DEV_SPICEDB_PRESHARED_KEY__CHANGE_BEFORE_DEPLOY}
       CATALOG_SPICEDB_PLAINTEXT: "true"
+      CATALOG_DATASOURCE_URL: jdbc:postgresql://postgres:5432/catalog_db
+      CATALOG_DATASOURCE_USERNAME: ${POSTGRES_USER:-commerce}
+      CATALOG_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-LOCAL_DEV_POSTGRES_PASSWORD__CHANGE_BEFORE_DEPLOY}
       SPRING_PROFILES_ACTIVE: ${CATALOG_SERVICE_SPRING_PROFILES_ACTIVE:-local}
     depends_on:
       keycloak:
         condition: service_healthy
       spicedb:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     networks:
       - oidc-internal
@@ -179,9 +206,14 @@ services:
       PAYMENT_OIDC_EXPECTED_CLIENT_ID: order-service
       PAYMENT_OIDC_REQUIRED_SCOPE: payments:authorize
       PAYMENT_OIDC_JWKS_URI: http://keycloak:8080/realms/oidc-service-reference/protocol/openid-connect/certs
+      PAYMENT_DATASOURCE_URL: jdbc:postgresql://postgres:5432/payment_db
+      PAYMENT_DATASOURCE_USERNAME: ${POSTGRES_USER:-commerce}
+      PAYMENT_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-LOCAL_DEV_POSTGRES_PASSWORD__CHANGE_BEFORE_DEPLOY}
       SPRING_PROFILES_ACTIVE: ${PAYMENT_SERVICE_SPRING_PROFILES_ACTIVE:-local}
     depends_on:
       keycloak:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     networks:
       - oidc-internal
@@ -197,6 +229,9 @@ services:
       context: .
       dockerfile: order-service/Dockerfile
     environment:
+      SERVER_PORT: 8086
+      MANAGEMENT_PORT: 9086
+      MANAGEMENT_ADDRESS: 127.0.0.1
       ORDER_OIDC_ISSUER_URI: http://localhost:8080/realms/oidc-service-reference
       ORDER_OIDC_AUDIENCE: commerce-api
       ORDER_OIDC_JWKS_URI: http://keycloak:8080/realms/oidc-service-reference/protocol/openid-connect/certs
@@ -207,18 +242,23 @@ services:
       ORDER_PAYMENT_TOKEN_URI: http://keycloak:8080/realms/oidc-service-reference/protocol/openid-connect/token
       ORDER_PAYMENT_CLIENT_ID: order-service
       ORDER_PAYMENT_CLIENT_SECRET: ${ORDER_PAYMENT_CLIENT_SECRET:-LOCAL_DEV_SERVICE_CLIENT_SECRET__CHANGE_BEFORE_DEPLOY}
+      ORDER_DATASOURCE_URL: jdbc:postgresql://postgres:5432/order_db
+      ORDER_DATASOURCE_USERNAME: ${POSTGRES_USER:-commerce}
+      ORDER_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-LOCAL_DEV_POSTGRES_PASSWORD__CHANGE_BEFORE_DEPLOY}
       SPRING_PROFILES_ACTIVE: ${ORDER_SERVICE_SPRING_PROFILES_ACTIVE:-local}
     depends_on:
       keycloak:
         condition: service_healthy
       spicedb:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
       payment-service:
         condition: service_healthy
     networks:
       - oidc-internal
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/actuator/health"]
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9086/actuator/health"]
       interval: 10s
       timeout: 5s
       retries: 18
@@ -260,3 +300,6 @@ services:
 networks:
   oidc-internal:
     driver: bridge
+
+volumes:
+  postgres-data:

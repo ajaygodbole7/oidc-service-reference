@@ -1,7 +1,8 @@
 package com.example.commerce.catalog.config;
 
 import com.example.commerce.catalog.domain.ProductRepository;
-import com.example.commerce.catalog.persistence.InMemoryProductRepository;
+import com.example.commerce.catalog.persistence.CatalogProductRowRepository;
+import com.example.commerce.catalog.persistence.PostgresProductRepository;
 import com.example.commerce.catalog.service.CatalogApplicationService;
 import com.example.commerce.security.AuthorizationClient;
 import com.example.commerce.security.CommerceJwtValidator;
@@ -12,13 +13,15 @@ import java.net.URI;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 
 @Configuration
 class CatalogConfig {
 
   @Bean
-  ProductRepository productRepository() {
-    return InMemoryProductRepository.withLocalFixtures();
+  ProductRepository productRepository(
+      CatalogProductRowRepository productRows, JdbcAggregateTemplate aggregateTemplate) {
+    return new PostgresProductRepository(productRows, aggregateTemplate);
   }
 
   @Bean

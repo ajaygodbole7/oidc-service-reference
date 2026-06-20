@@ -44,6 +44,8 @@ grep -q 'apache/apisix:3.16.0-debian' compose.yaml \
   || fail_check HARNESS-PIN-APISIX "APISIX image must be pinned to 3.16.0-debian"
 grep -q 'valkey/valkey:9.1.0' compose.yaml \
   || fail_check HARNESS-PIN-VALKEY "Valkey image must be pinned to 9.1.0"
+grep -q 'postgres:18.4' compose.yaml \
+  || fail_check HARNESS-PIN-POSTGRES "Postgres image must be pinned to 18.4"
 grep -q '"packageManager": "pnpm@11.7.0"' frontend/package.json \
   || fail_check HARNESS-PIN-PNPM "frontend package manager must be pinned to pnpm 11.7.0"
 grep -q '<artifactId>authzed</artifactId>' commerce-security-common/pom.xml \
@@ -86,17 +88,26 @@ sh tests/security/verify-order-payment-security-draft.sh
 if command -v docker >/dev/null 2>&1; then
   if docker compose ps >/tmp/oidc-service-reference-compose-ps.out 2>/dev/null; then
     info "service health summary from docker compose ps"
-    sed -n '1,12p' /tmp/oidc-service-reference-compose-ps.out
-    for service in keycloak valkey auth-service apisix; do
+    sed -n '1,18p' /tmp/oidc-service-reference-compose-ps.out
+    for service in keycloak valkey spicedb postgres auth-service cart-service catalog-service payment-service order-service apisix; do
       grep -E "oidc-service-reference-${service}-1[[:space:]].*healthy" \
         /tmp/oidc-service-reference-compose-ps.out >/dev/null 2>&1 \
         || { pending HARNESS-SERVICE-HEALTH "$service unavailable or not healthy"; service_health_pending=1; }
     done
-    grep -E "oidc-service-reference-spicedb-1[[:space:]].*Up" \
-      /tmp/oidc-service-reference-compose-ps.out >/dev/null 2>&1 \
-      || { pending HARNESS-SPICEDB-SERVICE "SpiceDB unavailable or not running"; service_health_pending=1; }
     if [ "${service_health_pending:-0}" = "0" ]; then
-      pass HARNESS-SERVICE-HEALTH "Keycloak, Valkey, Auth Service, and APISIX are healthy; SpiceDB is running"
+      pass HARNESS-SERVICE-HEALTH "Keycloak, Valkey, SpiceDB, Postgres, Auth Service, domain services, and APISIX are healthy"
+      missing_db=""
+      for db in catalog_db cart_db order_db payment_db; do
+        if ! docker compose exec -T postgres psql \
+            -U "${POSTGRES_USER:-commerce}" -d commerce -tAc "SELECT 1 FROM pg_database WHERE datname = '$db'" \
+            | grep -q 1; then
+          missing_db="$missing_db $db"
+        fi
+      done
+      if [ -n "$missing_db" ]; then
+        fail_check HARNESS-POSTGRES-INIT "missing database(s):$missing_db; recreate the local postgres-data volume or run a migration-safe init repair"
+      fi
+      pass HARNESS-POSTGRES-INIT "catalog_db, cart_db, order_db, and payment_db exist"
     fi
   else
     pending HARNESS-SERVICE-HEALTH "compose stack is not running; run scripts/up.sh when ready"
@@ -115,11 +126,11 @@ pending SEC-NO-RESOURCE-HIJACK "run sh tests/security/verify-cart-security-live.
 pending SEC-PROVISIONING-FAILS-CLOSED "run sh tests/security/verify-cart-security-live.sh SEC-PROVISIONING-FAILS-CLOSED for relationship-write failure proof"
 pending SEC-SPOOFED-IDENTITY-HEADERS "run sh tests/security/verify-cart-security-live.sh SEC-SPOOFED-IDENTITY-HEADERS for the APISIX stripped-header proof"
 pending SEC-BROWSER-AUTHORIZATION-OVERWRITTEN "run sh tests/security/verify-cart-security-live.sh SEC-BROWSER-AUTHORIZATION-OVERWRITTEN for the gateway bearer overwrite proof"
-pending SEC-PAYMENT-NO-BROWSER-ROUTE "requires payment service"
-pending SEC-PAYMENT-WRONG-CLIENT "requires payment service"
-pending SEC-PAYMENT-REJECTS-USER-TOKEN "requires payment service"
-pending SEC-CHECKOUT-IDEMPOTENT-REPLAY "requires order/payment services"
-pending SEC-CHECKOUT-IDEMPOTENCY-COLLISION "requires order/payment services"
+pending SEC-PAYMENT-NO-BROWSER-ROUTE "run sh tests/security/verify-order-payment-security-live.sh SEC-PAYMENT-NO-BROWSER-ROUTE for the browser gateway proof"
+pending SEC-PAYMENT-WRONG-CLIENT "run sh tests/security/verify-order-payment-security-live.sh SEC-PAYMENT-WRONG-CLIENT for the payment S2S caller proof"
+pending SEC-PAYMENT-REJECTS-USER-TOKEN "run sh tests/security/verify-order-payment-security-live.sh SEC-PAYMENT-REJECTS-USER-TOKEN for the payment audience proof"
+pending SEC-CHECKOUT-IDEMPOTENT-REPLAY "run sh tests/security/verify-order-payment-security-live.sh SEC-CHECKOUT-IDEMPOTENT-REPLAY for checkout replay"
+pending SEC-CHECKOUT-IDEMPOTENCY-COLLISION "run sh tests/security/verify-order-payment-security-live.sh SEC-CHECKOUT-IDEMPOTENCY-COLLISION for checkout collision"
 pending SEC-SPICEDB-UNAVAILABLE "requires SpiceDB"
 pending SEC-RELATIONSHIP-REMOVAL-IMMEDIATE "run sh tests/security/verify-cart-security-live.sh SEC-RELATIONSHIP-REMOVAL-IMMEDIATE for the local relationship removal fixture"
 pending HARNESS-CART-SPICEDB-LIVE "run CART_SPICEDB_LIVE=1 sh scripts/verify-cart-service.sh or sh scripts/verify-cart-spicedb-live.sh for the real cart SpiceDB argument proof"

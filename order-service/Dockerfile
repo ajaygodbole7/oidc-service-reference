@@ -36,7 +36,7 @@ WORKDIR /app
 
 COPY --from=build --chown=spring:spring /workspace/order-service/target/*-SNAPSHOT.jar /app/app.jar
 
-EXPOSE 8080
+EXPOSE 8086 9086
 
 ENTRYPOINT ["java", \
   "-XX:MaxRAMPercentage=75.0", \

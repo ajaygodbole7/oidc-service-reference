@@ -1,7 +1,8 @@
 package com.example.commerce.cart.config;
 
 import com.example.commerce.cart.domain.CartRepository;
-import com.example.commerce.cart.persistence.InMemoryCartRepository;
+import com.example.commerce.cart.persistence.CartRowRepository;
+import com.example.commerce.cart.persistence.PostgresCartRepository;
 import com.example.commerce.cart.service.CartApplicationService;
 import com.example.commerce.security.AuthorizationClient;
 import com.example.commerce.security.CommerceJwtValidator;
@@ -12,13 +13,14 @@ import java.net.URI;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 
 @Configuration
 class CartConfig {
 
   @Bean
-  CartRepository cartRepository() {
-    return InMemoryCartRepository.withLocalFixtures();
+  CartRepository cartRepository(CartRowRepository rows, JdbcAggregateTemplate aggregateTemplate) {
+    return new PostgresCartRepository(rows, aggregateTemplate);
   }
 
   @Bean

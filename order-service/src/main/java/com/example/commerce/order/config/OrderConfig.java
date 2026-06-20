@@ -2,12 +2,15 @@ package com.example.commerce.order.config;
 
 import com.example.commerce.order.domain.OrderRepository;
 import com.example.commerce.order.persistence.InMemoryCartLookup;
-import com.example.commerce.order.persistence.InMemoryIdempotencyRepository;
-import com.example.commerce.order.persistence.InMemoryOrderRepository;
+import com.example.commerce.order.persistence.OrderIdempotencyRowRepository;
+import com.example.commerce.order.persistence.OrderRowRepository;
+import com.example.commerce.order.persistence.PostgresIdempotencyRepository;
+import com.example.commerce.order.persistence.PostgresOrderRepository;
 import com.example.commerce.order.service.CartLookup;
 import com.example.commerce.order.service.IdempotencyRepository;
 import com.example.commerce.order.service.OrderApplicationService;
 import com.example.commerce.order.integration.HttpPaymentClient;
+import com.example.commerce.order.service.OrderCheckoutPersistence;
 import com.example.commerce.order.service.PaymentClient;
 import com.example.commerce.security.AuthorizationClient;
 import com.example.commerce.security.CommerceJwtValidator;
@@ -18,14 +21,15 @@ import java.net.URI;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 import org.springframework.web.client.RestClient;
 
 @Configuration
 class OrderConfig {
 
   @Bean
-  OrderRepository orderRepository() {
-    return InMemoryOrderRepository.withLocalFixtures();
+  OrderRepository orderRepository(OrderRowRepository rows, JdbcAggregateTemplate aggregateTemplate) {
+    return new PostgresOrderRepository(rows, aggregateTemplate);
   }
 
   @Bean
@@ -34,8 +38,15 @@ class OrderConfig {
   }
 
   @Bean
-  IdempotencyRepository idempotencyRepository() {
-    return new InMemoryIdempotencyRepository();
+  IdempotencyRepository idempotencyRepository(
+      OrderIdempotencyRowRepository rows, JdbcAggregateTemplate aggregateTemplate) {
+    return new PostgresIdempotencyRepository(rows, aggregateTemplate);
+  }
+
+  @Bean
+  OrderCheckoutPersistence orderCheckoutPersistence(
+      OrderRepository orderRepository, IdempotencyRepository idempotencyRepository) {
+    return new OrderCheckoutPersistence(orderRepository, idempotencyRepository);
   }
 
   @Bean
@@ -82,6 +93,7 @@ class OrderConfig {
       OrderRepository orderRepository,
       CartLookup cartLookup,
       IdempotencyRepository idempotencyRepository,
+      OrderCheckoutPersistence orderCheckoutPersistence,
       PaymentClient paymentClient,
       ScopeAuthorizer scopeAuthorizer,
       ResourceAuthorizer resourceAuthorizer) {
@@ -89,6 +101,7 @@ class OrderConfig {
         orderRepository,
         cartLookup,
         idempotencyRepository,
+        orderCheckoutPersistence,
         paymentClient,
         scopeAuthorizer,
         resourceAuthorizer);

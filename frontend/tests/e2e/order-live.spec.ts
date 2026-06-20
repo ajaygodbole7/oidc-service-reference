@@ -51,6 +51,10 @@ function checkoutBody(paymentMethodId: string, shippingPostalCode: string): stri
   return JSON.stringify({ paymentMethodId, shippingPostalCode });
 }
 
+function harnessKey(suffix: string): string {
+  return `${process.env.ORDER_PAYMENT_HARNESS_RUN_ID ?? "local"}-${suffix}`;
+}
+
 test("SEC-CHECKOUT-IDEMPOTENT-REPLAY: same key + same body returns the same order", async ({
   page
 }) => {
@@ -58,7 +62,7 @@ test("SEC-CHECKOUT-IDEMPOTENT-REPLAY: same key + same body returns the same orde
 
   await loginAs(page, "alice");
   const csrf = await csrfHeaders(page);
-  const key = "idem-replay-1";
+  const key = harnessKey("idem-replay");
   const body = checkoutBody("pm-card-1", "94105");
 
   const first = await apiFetch(page, "/api/orders/checkout", {
@@ -89,7 +93,7 @@ test("SEC-CHECKOUT-IDEMPOTENCY-COLLISION: same key + different body is rejected 
 
   await loginAs(page, "alice");
   const csrf = await csrfHeaders(page);
-  const key = "idem-collision-1";
+  const key = harnessKey("idem-collision");
 
   const first = await apiFetch(page, "/api/orders/checkout", {
     method: "POST",

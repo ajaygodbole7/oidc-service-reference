@@ -20,6 +20,7 @@ import com.example.commerce.order.service.CartSnapshot;
 import com.example.commerce.order.service.IdempotencyRecord;
 import com.example.commerce.order.service.IdempotencyRepository;
 import com.example.commerce.order.service.OrderApplicationService;
+import com.example.commerce.order.service.OrderCheckoutPersistence;
 import com.example.commerce.order.service.PaymentAuthorization;
 import com.example.commerce.order.service.PaymentAuthorizationCommand;
 import com.example.commerce.order.service.PaymentClient;
@@ -52,11 +53,13 @@ class OrderWebErrorHandlingTest {
   private static final Instant NOW = Instant.parse("2026-06-20T00:00:00Z");
 
   private final RecordingOrderRepository orderRepository = new RecordingOrderRepository(List.of(aliceOrder()));
+  private final RecordingIdempotencyRepository idempotencyRepository = new RecordingIdempotencyRepository();
   private final OrderApplicationService service = new OrderApplicationService(
       orderRepository,
       subject -> Optional.of(new CartSnapshot(new CartId(subject + "-cart"), List.of(
           new OrderLine(new ProductId("starter-mug"), 1, Money.usd("12.50"))))),
-      new RecordingIdempotencyRepository(),
+      idempotencyRepository,
+      new OrderCheckoutPersistence(orderRepository, idempotencyRepository),
       new RecordingPaymentClient(),
       new ScopeAuthorizer(),
       new ResourceAuthorizer(new AllowingAuthorizationClient()),
@@ -212,8 +215,23 @@ class OrderWebErrorHandlingTest {
     }
 
     @Override
-    public void save(IdempotencyRecord record) {
-      records.put(record.subject() + ":" + record.key().value(), record);
+    public boolean claim(String subject, IdempotencyKey key, String requestFingerprint) {
+      String mapKey = subject + ":" + key.value();
+      if (records.containsKey(mapKey)) {
+        return false;
+      }
+      records.put(mapKey, new IdempotencyRecord(subject, key, requestFingerprint, null));
+      return true;
+    }
+
+    @Override
+    public void linkOrder(String subject, IdempotencyKey key, OrderId orderId) {
+      String mapKey = subject + ":" + key.value();
+      IdempotencyRecord existing = records.get(mapKey);
+      if (existing == null) {
+        throw new IllegalStateException("idempotency record not claimed");
+      }
+      records.put(mapKey, new IdempotencyRecord(subject, key, existing.requestFingerprint(), orderId));
     }
   }
 

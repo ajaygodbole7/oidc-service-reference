@@ -24,7 +24,7 @@ upstreams:
   - id: order-service
     type: roundrobin
     nodes:
-      "order-service:8080": 1
+      "order-service:8086": 1
 
 routes:
   - id: api-cart-current
