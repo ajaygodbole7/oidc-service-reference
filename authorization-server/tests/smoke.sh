@@ -104,12 +104,12 @@ assert(Array.isArray(auth.webOrigins) && auth.webOrigins.length === 0,
 for (const scope of ["openid", "profile", "email", "roles", "api.read"]) {
   assert(auth.defaultClientScopes.includes(scope), `Auth Service default scopes must include ${scope}`);
 }
-for (const scope of ["cart:read", "cart:write"]) {
+for (const scope of ["cart:read", "cart:write", "catalog:write", "orders:read", "orders:write"]) {
   assert(scopes.has(scope), `missing ${scope} client scope`);
   assert(scopes.get(scope).attributes["include.in.token.scope"] === "true",
          `${scope} must be emitted in the access-token scope claim`);
 }
-for (const scope of ["api.audience", "cart:read", "cart:write", "api.write", "admin.read"]) {
+for (const scope of ["api.audience", "cart:read", "cart:write", "catalog:write", "orders:read", "orders:write", "api.write", "admin.read"]) {
   assert((auth.optionalClientScopes || []).includes(scope), `Auth Service optional scopes must include ${scope}`);
 }
 
