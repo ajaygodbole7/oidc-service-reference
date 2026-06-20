@@ -78,6 +78,7 @@ sh scripts/verify-cart-service.sh
 sh scripts/verify-catalog-service.sh
 sh tests/security/verify-cart-security-draft.sh
 sh tests/security/verify-catalog-security-draft.sh
+sh tests/security/verify-order-payment-security-draft.sh
 
 if command -v docker >/dev/null 2>&1; then
   if docker compose ps >/tmp/oidc-service-reference-compose-ps.out 2>/dev/null; then

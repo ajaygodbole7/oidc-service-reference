@@ -22,7 +22,7 @@ Every session must leave these sections populated:
 
 ## Current slice
 
-Order/payment vertical slice — not started.
+Order/payment vertical slice — acceptance map pinned; implementation fan-out started.
 
 Scaffold from `../oidc-reference` is DONE and accepted (2026-06-17 18:15): stack boots
 healthy and `SEC-NO-BROWSER-TOKENS` passed live. Authorization substrate is DONE and
@@ -41,9 +41,9 @@ writes succeed only through `catalog:write` plus SpiceDB `store:main#manage`.
 
 ## Exact next action
 
-Before writing order/payment code, tighten the order/payment acceptance map in `PLAN.md` and
-the harness checklist so parallel service agents can work without guessing. Pin the first
-order/payment slice to:
+Integrate the active order-service and payment-service worker outputs, then run the narrow
+module verifiers before touching Compose or live Docker. The first order/payment slice is
+pinned to:
 
 ```sh
 SEC-PAYMENT-NO-BROWSER-ROUTE
@@ -53,9 +53,9 @@ SEC-CHECKOUT-IDEMPOTENT-REPLAY
 SEC-CHECKOUT-IDEMPOTENCY-COLLISION
 ```
 
-Then fan out order-service, payment-service, frontend workflow, and harness/security agents
-under the ownership rules in `AGENTS.md`. Keep testing sequential when Maven `clean` or the
-full Compose stack is involved.
+Order-service and payment-service workers are active under the ownership rules in
+`AGENTS.md`. Keep testing sequential when Maven `clean` or the full Compose stack is
+involved.
 
 Useful acceptance evidence to preserve:
 
@@ -87,7 +87,8 @@ Next concrete implementation steps:
    stack run falling to roughly 0.5 GiB free.
 3. Do not rerun the full stack while free disk is near 3 GiB unless the next live gate needs
    it; image rebuilds can drop the host below 1 GiB.
-4. Start order/payment only after the acceptance map above is explicit enough for subagents.
+4. Review worker patches for scope drift before integration; shared contracts remain
+   orchestrator-owned.
 
 Do not create runnable `scripts/agent-init.sh` or `scripts/agent-loop.sh` yet. Do not
 start the Postgres persistence slice yet.
@@ -351,6 +352,22 @@ resource gate, and merchant write allowed only with `catalog:write` plus
 and unused images were pruned. Host disk recovered from about 1.0 GiB free to about 4.1 GiB
 free, and `docker system df` reported 0B images, containers, volumes, and build cache.
 
+Order/payment acceptance map pinned 2026-06-20 07:42 PDT:
+
+```sh
+sh tests/security/verify-order-payment-security-draft.sh
+sh scripts/verify-all.sh
+```
+
+Result: PASS for the new read-only draft harness and aggregate local verifier. Added
+`tests/security/order-payment-security-cases.tsv` and
+`tests/security/verify-order-payment-security-draft.sh`, wired the draft into
+`verify-all.sh`, and tightened the `PLAN.md` order/payment acceptance row. The harness now
+keeps `SEC-PAYMENT-NO-BROWSER-ROUTE`, `SEC-PAYMENT-WRONG-CLIENT`,
+`SEC-PAYMENT-REJECTS-USER-TOKEN`, `SEC-CHECKOUT-IDEMPOTENT-REPLAY`, and
+`SEC-CHECKOUT-IDEMPOTENCY-COLLISION` explicit with purpose, future command, expected result,
+and remediation. All five remain PENDING/non-live until order/payment services exist.
+
 Scaffold slice ACCEPTED 2026-06-17 18:15 — all gates green live, in a watched run:
 - `sh scripts/up.sh` — stack boots healthy (APISIX 3.16.0-debian, Keycloak 26.6.3, Valkey
   9.1.0, JDK-26 auth-service).
@@ -431,9 +448,12 @@ Completed 2026-06-18 cart review/fix fan-out:
   cart security harness.
 - Explorers mapped A1-A4 live wiring and checked for missed HIGH/MED risks.
 
-No subagents are currently active. Cart and catalog are accepted; the next fan-out should
-split order-service, payment-service, frontend workflow, and harness/security work by the
-documented ownership scopes after the order/payment acceptance map is pinned.
+Active 2026-06-20:
+- Order-service worker owns `order-service/**` only.
+- Payment-service worker owns `payment-service/**` and `commerce-security-common/**` only.
+
+Cart and catalog are accepted. The orchestrator owns integration, root POM/Compose/gateway/
+realm wiring, live harnesses, `PROGRESS.md`, and final verification.
 
 ## Blockers
 
@@ -455,11 +475,11 @@ documented ownership scopes after the order/payment acceptance map is pinned.
 ## Session handoff
 
 The scaffold, authorization-substrate, cart vertical slice, dynamic cart ownership
-provisioning, and catalog vertical slice are accepted locally. The next agent should pin the
-order/payment acceptance map, then fan out order-service, payment-service, frontend workflow,
-and harness/security work under the documented ownership scopes. Keep the four gates visible
-in code and traces. Do not start Postgres until order/payment service flows are shaped or the
-human explicitly moves persistence earlier.
+provisioning, and catalog vertical slice are accepted locally. The order/payment acceptance
+map is pinned and two workers are active. Next integrate order-service/payment-service module
+patches, then add orchestrator-owned root POM, Keycloak, APISIX, Compose, and live harness
+wiring. Keep the four gates visible in code and traces. Do not start Postgres until
+order/payment service flows are shaped or the human explicitly moves persistence earlier.
 
 ## Session log
 
@@ -641,3 +661,14 @@ Append-only, timestamped chronology (newest at the bottom); captures non-commit 
   disk was about `4.1 GiB` free and `docker system df` reported 0B Docker images, containers,
   volumes, and build cache. Updated handoff to order/payment acceptance mapping as the next
   slice and kept Postgres deferred.
+- 2026-06-20 07:42 PDT — Codex — pinned the order/payment acceptance map before service
+  scaffold. Added a read-only order/payment draft harness with stable IDs, future commands,
+  expected results, and remediation for the five first-slice gates:
+  `SEC-PAYMENT-NO-BROWSER-ROUTE`, `SEC-PAYMENT-WRONG-CLIENT`,
+  `SEC-PAYMENT-REJECTS-USER-TOKEN`, `SEC-CHECKOUT-IDEMPOTENT-REPLAY`, and
+  `SEC-CHECKOUT-IDEMPOTENCY-COLLISION`. Tightened the `PLAN.md` order/payment acceptance row
+  around internal-only payment, client-credentials caller validation, user-token rejection,
+  and idempotency-before-payment. Verified green with
+  `sh tests/security/verify-order-payment-security-draft.sh` and `sh scripts/verify-all.sh`.
+  Started parallel workers for `order-service/**` and `payment-service/**` +
+  `commerce-security-common/**`; orchestrator retains root/shared wiring.
