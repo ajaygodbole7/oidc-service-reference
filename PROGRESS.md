@@ -22,7 +22,7 @@ Every session must leave these sections populated:
 
 ## Current slice
 
-Dynamic cart ownership provisioning — ACCEPTED locally on 2026-06-19 17:07 PDT.
+Catalog vertical slice — WIP, not accepted.
 
 Scaffold from `../oidc-reference` is DONE and accepted (2026-06-17 18:15): stack boots
 healthy and `SEC-NO-BROWSER-TOKENS` passed live. Authorization substrate is DONE and
@@ -35,17 +35,31 @@ cart by current subject, generates the cart id server-side, writes `cart:{id}#ow
 through `ResourceAuthorizer`, then persists; later reads/writes use the normal fully
 consistent SpiceDB gate-4 check.
 
+Catalog is wired in code and local gates are green, but the slice is not accepted until the
+live `SEC-CATALOG-ANONYMOUS-READ-ONLY` verifier passes all three browser/gateway cases:
+anonymous read/write-deny, non-merchant write deny, and merchant write allow through
+`catalog:write` plus SpiceDB `store:main#manage`.
+
 ## Exact next action
 
-Dynamic cart ownership provisioning is ACCEPTED locally. The next concrete action is to
-commit this accepted slice, tear down/prune Docker for disk, then choose the next fan-out
-slice under the documented ownership scopes: catalog-service, order-service,
-payment-service, frontend workflow, harness/security, and later persistence. Do not start
-Postgres until this slice is committed and the next slice is chosen.
+Free enough host disk for the local Compose stack and make sure Docker responds, then run:
+
+```sh
+sh tests/security/verify-catalog-security-live.sh SEC-CATALOG-ANONYMOUS-READ-ONLY
+```
+
+If it passes, update this file to mark catalog accepted, commit the acceptance state, and
+tear down/prune Docker again. Do not start order/payment or Postgres until catalog is
+accepted or explicitly paused by the human.
 
 Useful acceptance evidence to preserve:
 
 ```sh
+sh scripts/verify-catalog-service.sh
+sh tests/security/verify-catalog-security-draft.sh
+cd frontend && ./node_modules/.bin/tsc --noEmit
+cd frontend && ./node_modules/.bin/vitest run src/App.test.tsx src/auth.test.ts src/architecture.test.ts
+sh tests/security/verify-catalog-security-live.sh SEC-CATALOG-ANONYMOUS-READ-ONLY
 sh scripts/verify-cart-service.sh
 sh tests/security/verify-cart-security-draft.sh
 sh scripts/verify-all.sh
@@ -64,28 +78,28 @@ cd frontend && E2E_FULL_STACK=1 corepack pnpm exec playwright test tests/e2e/aut
 Next concrete implementation steps:
 1. Keep verifier runs sequential when they invoke Maven `clean`; parallel Maven gates can
    delete each other's reactor outputs.
-2. Commit the accepted cart slice locally, including `PROGRESS.md`.
-3. Tear down the stack and prune build cache after the commit to protect disk.
-4. Start parallel fan-out only after the commit is in place.
-5. Keep using `E2E_CART_SKIP_UP=1 sh scripts/e2e-cart.sh` when the stack is already healthy;
-   run full `sh scripts/up.sh` only when the stack or rendered APISIX config changed.
+2. Do not rerun the full stack while free disk is near 3 GiB; Claude observed the catalog
+   stack run falling to roughly 0.5 GiB free.
+3. Once disk is safe, run the catalog live verifier above. It seeds SpiceDB, restarts APISIX,
+   and runs `frontend/tests/e2e/catalog-live.spec.ts`.
+4. If the live verifier fails, inspect whether the failure is gate 3 (`catalog:write` scope)
+   or gate 4 (`store:main#manage`) before changing app code.
+5. If it passes, mark the catalog slice accepted and then tear down/prune.
 
 Do not create runnable `scripts/agent-init.sh` or `scripts/agent-loop.sh` yet. Do not
 start the Postgres persistence slice yet.
 
 ## Acceptance gate
 
-The cart slice can advance only when:
-- cart UI and cart-service run through the gateway
-- JWT, scope, and SpiceDB gates are traced
-- `SEC-NO-BROWSER-TOKENS`, `SEC-NON-COMMERCE-AUD`,
-  `SEC-SCOPE-WITHOUT-RELATIONSHIP`, `SEC-RELATIONSHIP-WITHOUT-SCOPE`,
-  `SEC-SPOOFED-IDENTITY-HEADERS`, `SEC-BROWSER-AUTHORIZATION-OVERWRITTEN`, and
-  `SEC-RELATIONSHIP-REMOVAL-IMMEDIATE` pass live
-- `SEC-OWNERSHIP-PROVISIONED-FOR-CALLER`, `SEC-NO-RESOURCE-HIJACK`, and
-  `SEC-PROVISIONING-FAILS-CLOSED` pass live/local contract gates
-- architecture checks for controller/service/domain/persistence/security boundaries pass
-- no-browser-token guard remains green
+The catalog slice can advance only when:
+- anonymous `GET /api/catalog/products` and `GET /api/catalog/products/{productId}` work
+  through APISIX without a bearer token
+- anonymous `POST/PATCH /api/catalog/products/**` deny
+- authenticated non-merchant write denies at the SpiceDB resource gate
+- authenticated merchant write succeeds only with `catalog:write` plus
+  `store:main#manage`
+- `SEC-CATALOG-ANONYMOUS-READ-ONLY` passes live in a watched run
+- catalog service local gates and `verify-all.sh` local gates remain green
 
 ## Build checklist
 
@@ -109,11 +123,12 @@ The cart slice can advance only when:
       relationship for the authenticated subject through `ResourceAuthorizer`, uses a
       server-generated cart id, proves the next access through fully consistent gate 4,
       and fails closed when relationship writes fail. (Accepted 2026-06-19 17:07 PDT.)
-- [ ] Parallel fan-out after cart: catalog-service agent, order-service agent,
-      payment-service agent, frontend workflow agent, and harness/security agent work under
-      explicit ownership scopes.
+- [x] Start parallel fan-out after cart: catalog-service agent, frontend workflow agent,
+      and harness/security agent worked under explicit ownership scopes for the catalog
+      slice. (Started 2026-06-19; catalog is still WIP pending final live verifier.)
 - [ ] Build catalog: anonymous reads, `SEC-CATALOG-ANONYMOUS-READ-ONLY`, merchant writes,
-      and `store#manage` check.
+      and `store#manage` check. Backend, frontend, APISIX, Compose, Keycloak scope/user,
+      and draft/live harness code exist; final merchant live verification is still pending.
 - [ ] Build order and payment: checkout, S2S client credentials, idempotency, support
       read, owner cancel, and payment rejection scenarios.
 - [ ] Add Postgres persistence: local Postgres, per-service database/schema,
@@ -297,6 +312,30 @@ the payload are ignored (`SEC-NO-RESOURCE-HIJACK`). The live loop also found and
 APISIX forwarding bug: `bff-session` was clearing `Content-Length`, causing proxied POSTs to
 arrive at cart-service with a missing body.
 
+Catalog WIP local gates verified 2026-06-20 07:18 PDT:
+
+```sh
+sh scripts/verify-catalog-service.sh
+sh tests/security/verify-catalog-security-draft.sh
+./node_modules/.bin/tsc --noEmit
+./node_modules/.bin/vitest run src/App.test.tsx src/auth.test.ts src/architecture.test.ts
+PATH=/Users/ajaygodbole/.sdkman/candidates/maven/current/bin:/Users/ajaygodbole/.sdkman/candidates/java/current/bin:/usr/bin:/bin:/usr/sbin:/sbin sh scripts/verify-all.sh
+```
+
+Result: PASS for local/static/JVM/frontend gates. `verify-catalog-service.sh` ran
+`commerce-security-common` 23 tests (2 expected skipped live SpiceDB tests) and
+`catalog-service` 15 tests. Frontend typecheck passed and focused Vitest ran 35 tests.
+`verify-all.sh` was run with Docker hidden from `PATH` because Docker was not responding
+quickly; it passed implemented checks and reported service/live checks as explicit PENDING.
+Fixed during this continuation: `compose.yaml` now includes `catalog:write` in the default
+`OIDC_SCOPES`, matching `auth-service` config and the live merchant-write requirement.
+
+Catalog live status: NOT accepted. Claude previously observed anonymous catalog read and
+anonymous/non-merchant write-denial live cases green, but the merchant write re-run was
+blocked by host disk falling to roughly 0.5 GiB while the stack was up. The next watched
+acceptance gate is `sh tests/security/verify-catalog-security-live.sh
+SEC-CATALOG-ANONYMOUS-READ-ONLY` after disk/Docker are healthy.
+
 Scaffold slice ACCEPTED 2026-06-17 18:15 — all gates green live, in a watched run:
 - `sh scripts/up.sh` — stack boots healthy (APISIX 3.16.0-debian, Keycloak 26.6.3, Valkey
   9.1.0, JDK-26 auth-service).
@@ -383,19 +422,20 @@ scopes.
 
 ## Blockers
 
-- Host disk tight: `/System/Volumes/Data` at 1.7 GiB free / 100% used (2026-06-19 17:07).
-  Docker build cache was pruned after the cart-service rebuild, but the local stack
-  images/containers are present. Tear down and prune after the acceptance commit; any full
-  rebuild or Postgres image pull may still hit ENOSPC.
+- Host disk tight: `/System/Volumes/Data` at 3.2 GiB free / 99% used (2026-06-20 07:18).
+  Claude observed the catalog live stack dropping free space to roughly 0.5 GiB. Do not run
+  the full stack until host disk is freed to roughly 6-7 GiB or Docker Desktop storage is
+  compacted. Docker also did not respond quickly to `docker system df` during this
+  continuation; confirm Docker health before the live verifier.
 - Local shell has Node 24.12.0; `frontend/package.json` pins Node 26.3.0, so pnpm emits
   an engine warning until Node is switched.
-- Postgres persistence is intentionally deferred until the first cart authorization ladder
-  is proven with in-memory repositories.
+- Postgres persistence is intentionally deferred until catalog is accepted or explicitly
+  paused by the human.
 - Harness evidence belongs in verifier output, tests, scripts, and `PROGRESS.md`.
 - Future `scripts/agent-init.sh` and `scripts/agent-loop.sh` are intentionally deferred
   until the stack and verifier exist.
-- Remote push previously failed before the GitHub repo existed. The repo now exists per the
-  human, but the accepted cart work is not committed or pushed yet.
+- Catalog is committed as WIP, not accepted. Do not mark the catalog slice done until the
+  live `SEC-CATALOG-ANONYMOUS-READ-ONLY` verifier passes all cases, including merchant write.
 - Do not run Maven-cleaning gates in parallel. `verify-all.sh` and `e2e-cart.sh` both call
   Maven clean paths; running them concurrently caused a transient missing-class compile
   failure that disappeared when rerun sequentially.
@@ -403,11 +443,12 @@ scopes.
 ## Session handoff
 
 The scaffold, authorization-substrate, cart vertical slice, and dynamic cart ownership
-provisioning are accepted locally. Dynamic ownership is not committed yet. The next agent
-should commit the accepted slice, tear down/prune the stack to protect disk, then start
-parallel fan-out under the documented service scopes. Keep the four gates visible in code
-and traces. Do not start Postgres until the next slice is chosen; cart still uses in-memory
-repositories by design.
+provisioning are accepted locally. Catalog is wired and local gates are green, but it remains
+WIP because the merchant live write has not been re-run after the SpiceDB seeding fix and the
+`catalog:write` Compose scope fix. The next agent should first free disk / confirm Docker,
+then run `sh tests/security/verify-catalog-security-live.sh SEC-CATALOG-ANONYMOUS-READ-ONLY`.
+Keep the four gates visible in code and traces. Do not start Postgres or order/payment until
+catalog is accepted or explicitly paused by the human.
 
 ## Session log
 
@@ -567,3 +608,14 @@ Append-only, timestamped chronology (newest at the bottom); captures non-commit 
   ENOSPC-brick. Committed as a WIP checkpoint, NOT accepted. Next: free host disk to ~6-7 GiB
   (or compact the Docker Desktop disk image), then `sh tests/security/verify-catalog-security-live.sh`
   to confirm the merchant case green and convert to an acceptance commit.
+- 2026-06-20 07:18 PDT — Codex — continued from Claude's catalog WIP checkpoint. Found one
+  remaining shared-config bug before attempting another live run: `auth-service` default scopes
+  included `catalog:write`, but `compose.yaml` overrode `OIDC_SCOPES` without it, so a normal
+  local merchant login could fail gate 3 on catalog writes. Patched the Compose default to
+  request `catalog:write`. Verified local gates green: `sh scripts/verify-catalog-service.sh`,
+  `sh tests/security/verify-catalog-security-draft.sh`, frontend `./node_modules/.bin/tsc
+  --noEmit`, frontend focused Vitest (`35` tests), and `verify-all.sh` with Docker hidden from
+  `PATH` so it did not hang while Docker was unhealthy. Docker `system df` did not respond
+  quickly and was interrupted; host disk was about `3.2 GiB` free, still below the safe live
+  stack threshold. Catalog remains WIP, not accepted; next watched gate is the live catalog
+  verifier after disk/Docker recovery.

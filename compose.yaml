@@ -87,7 +87,7 @@ services:
       SPRING_PROFILES_ACTIVE: ${AUTH_SERVICE_SPRING_PROFILES_ACTIVE:-local}
       AUTH_CLIENT_ID: ${AUTH_CLIENT_ID:-commerce-auth}
       AUTH_CLIENT_SECRET: ${AUTH_CLIENT_SECRET:-LOCAL_DEV_AUTH_CLIENT_SECRET__CHANGE_BEFORE_DEPLOY}
-      OIDC_SCOPES: ${OIDC_SCOPES:-openid,profile,email,roles,api.audience,api.read,cart:read,cart:write}
+      OIDC_SCOPES: ${OIDC_SCOPES:-openid,profile,email,roles,api.audience,api.read,cart:read,cart:write,catalog:write}
       OIDC_ROLES_CLAIM_PATH: ${OIDC_ROLES_CLAIM_PATH:-realm_access,roles}
       APP_REFRESH_REQUIRE_ROTATION: ${APP_REFRESH_REQUIRE_ROTATION:-true}
       GATEWAY_CLIENT_ID: ${GATEWAY_CLIENT_ID:-commerce-api-gateway}
