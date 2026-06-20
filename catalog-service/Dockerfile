@@ -16,6 +16,8 @@ COPY pom.xml ./
 # to parse it — even though `-pl catalog-service -am` only builds catalog + its deps.
 COPY commerce-security-common/pom.xml commerce-security-common/pom.xml
 COPY cart-service/pom.xml cart-service/pom.xml
+COPY order-service/pom.xml order-service/pom.xml
+COPY payment-service/pom.xml payment-service/pom.xml
 COPY catalog-service/pom.xml catalog-service/pom.xml
 RUN mvn -B -q -f pom.xml -pl catalog-service -am -DskipTests dependency:go-offline || true
 

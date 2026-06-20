@@ -251,6 +251,24 @@
       }
     },
     {
+      "name": "orders:read",
+      "description": "Read the caller's own orders.",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "orders:write",
+      "description": "Place and cancel the caller's own orders.",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
       "name": "admin.read",
       "description": "Admin-scoped API read.",
       "protocol": "openid-connect",
@@ -267,6 +285,37 @@
         "include.in.token.scope": "true",
         "display.on.consent.screen": "false"
       }
+    },
+    {
+      "name": "payments:authorize",
+      "description": "Authorize payment commands from Order Service to Payment Service.",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "payment.audience",
+      "description": "Adds payment-service to access-token aud claim for order-to-payment S2S.",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "false",
+        "display.on.consent.screen": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "audience-mapper-payment-service",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "payment-service",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
     },
     {
       "name": "auth.internal",
@@ -350,7 +399,7 @@
         "roles",
         "api.read"
       ],
-      "optionalClientScopes": ["api.audience", "cart:read", "cart:write", "catalog:write", "api.write", "admin.read"]
+      "optionalClientScopes": ["api.audience", "cart:read", "cart:write", "catalog:write", "orders:read", "orders:write", "api.write", "admin.read"]
     },
     {
       "clientId": "commerce-api-gateway",
@@ -378,7 +427,7 @@
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": true,
-      "defaultClientScopes": ["api.audience", "service.jobs"]
+      "defaultClientScopes": ["payment.audience", "payments:authorize"]
     }
   ]
 }

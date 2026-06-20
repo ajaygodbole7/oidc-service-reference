@@ -1,0 +1,19 @@
+server:
+  port: ${SERVER_PORT:8085}
+
+management:
+  server:
+    port: ${MANAGEMENT_PORT:9085}
+    address: ${MANAGEMENT_ADDRESS:127.0.0.1}
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+payment:
+  oidc:
+    issuer-uri: ${PAYMENT_OIDC_ISSUER_URI:http://localhost:8080/realms/oidc-service-reference}
+    audience: ${PAYMENT_OIDC_AUDIENCE:payment-service}
+    expected-client-id: ${PAYMENT_OIDC_EXPECTED_CLIENT_ID:order-service}
+    required-scope: ${PAYMENT_OIDC_REQUIRED_SCOPE:payments:authorize}
+    jwks-uri: ${PAYMENT_OIDC_JWKS_URI:http://keycloak:8080/realms/oidc-service-reference/protocol/openid-connect/certs}

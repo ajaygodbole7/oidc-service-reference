@@ -7,6 +7,7 @@
 #   REALM_FILE               Realm JSON to statically verify. Default realm/oidc-service-reference-realm.json.
 #   EXPECTED_REALM           Expected realm name. Default oidc-service-reference.
 #   EXPECTED_API_AUDIENCE    Expected Resource Server audience. Default commerce-api.
+#   EXPECTED_PAYMENT_AUDIENCE Expected Payment Service audience. Default payment-service.
 #   EXPECTED_ROLES_CLAIM     Expected roles claim emitted by the roles mapper. Default realm_access.roles.
 #   SERVICE_CLIENT_SECRET    Secret for order-service. Default dev placeholder.
 #   API_GATEWAY_CLIENT_SECRET Secret for commerce-api-gateway. Default dev placeholder.
@@ -26,6 +27,7 @@ project_dir="$(CDPATH= cd -- "$script_dir/.." && pwd)"
 realm_file="${REALM_FILE:-$project_dir/realm/oidc-service-reference-realm.json}"
 expected_realm="${EXPECTED_REALM:-oidc-service-reference}"
 expected_api_audience="${EXPECTED_API_AUDIENCE:-commerce-api}"
+expected_payment_audience="${EXPECTED_PAYMENT_AUDIENCE:-payment-service}"
 expected_roles_claim="${EXPECTED_ROLES_CLAIM:-realm_access.roles}"
 service_secret="${SERVICE_CLIENT_SECRET:-LOCAL_DEV_SERVICE_CLIENT_SECRET__CHANGE_BEFORE_DEPLOY}"
 api_gateway_secret="${API_GATEWAY_CLIENT_SECRET:-LOCAL_DEV_GATEWAY_CLIENT_SECRET__CHANGE_BEFORE_DEPLOY}"
@@ -37,12 +39,13 @@ fail() {
 
 [ -f "$realm_file" ] || fail "missing $realm_file"
 
-node - "$realm_file" "$expected_realm" "$expected_api_audience" "$expected_roles_claim" <<'NODE'
+node - "$realm_file" "$expected_realm" "$expected_api_audience" "$expected_payment_audience" "$expected_roles_claim" <<'NODE'
 const fs = require("fs");
 const path = process.argv[2];
 const expectedRealm = process.argv[3];
 const expectedApiAudience = process.argv[4];
-const expectedRolesClaim = process.argv[5];
+const expectedPaymentAudience = process.argv[5];
+const expectedRolesClaim = process.argv[6];
 const realm = JSON.parse(fs.readFileSync(path, "utf8"));
 const clients = new Map(realm.clients.map((c) => [c.clientId, c]));
 const scopes = new Map((realm.clientScopes || []).map((s) => [s.name, s]));
@@ -52,6 +55,7 @@ const auth = clients.get("commerce-auth");
 const apiGateway = clients.get("commerce-api-gateway");
 const service = clients.get("order-service");
 const audScope = scopes.get("api.audience");
+const paymentAudScope = scopes.get("payment.audience");
 const authInternalScope = scopes.get("auth.internal");
 const rolesScope = scopes.get("roles");
 
@@ -136,10 +140,30 @@ assert(service.serviceAccountsEnabled === true, "service accounts must be enable
 assert(service.implicitFlowEnabled === false, "service implicit flow must be disabled");
 assert(service.standardFlowEnabled === false, "service standard flow must be disabled");
 assert(service.directAccessGrantsEnabled === false, "service direct grants must be disabled");
-assert(service.defaultClientScopes.includes("api.audience"),
-       "service default scopes must include api.audience");
-assert(service.defaultClientScopes.includes("service.jobs"),
-       "service default scopes must include service.jobs");
+assert(service.defaultClientScopes.includes("payment.audience"),
+       "order-service default scopes must include payment.audience");
+assert(service.defaultClientScopes.includes("payments:authorize"),
+       "order-service default scopes must include payments:authorize");
+assert(!service.defaultClientScopes.includes("api.audience"),
+       "order-service client-credentials token must not default to commerce-api audience");
+assert(!service.defaultClientScopes.includes("service.jobs"),
+       "order-service client-credentials token must not use the old service.jobs scope");
+
+assert(scopes.has("payments:authorize"), "missing payments:authorize client scope");
+assert(scopes.get("payments:authorize").attributes["include.in.token.scope"] === "true",
+       "payments:authorize must be emitted in the access-token scope claim");
+
+assert(paymentAudScope, "missing payment.audience client scope");
+const paymentAudMapper = (paymentAudScope.protocolMappers || []).find(
+  (m) => m.protocolMapper === "oidc-audience-mapper"
+);
+assert(paymentAudMapper, "payment.audience scope missing oidc-audience-mapper");
+assert(paymentAudMapper.config["included.custom.audience"] === expectedPaymentAudience,
+       `payment audience mapper must add ${expectedPaymentAudience}`);
+assert(paymentAudMapper.config["access.token.claim"] === "true",
+       "payment audience mapper must add to access token");
+assert(paymentAudMapper.config["id.token.claim"] === "false",
+       "payment audience mapper must NOT add to id token");
 
 assert(audScope, "missing api.audience client scope");
 const audMapper = (audScope.protocolMappers || []).find(
@@ -240,11 +264,11 @@ if ! curl -fsS \
   fail "service client_credentials token issuance failed (check SERVICE_CLIENT_SECRET)"
 fi
 
-node - "$issuer" "$token_json" "$expected_api_audience" <<'NODE'
+node - "$issuer" "$token_json" "$expected_payment_audience" <<'NODE'
 const fs = require("fs");
 const issuer = process.argv[2];
 const t = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
-const expectedApiAudience = process.argv[4];
+const expectedPaymentAudience = process.argv[4];
 if (!t.access_token) { console.error("missing access_token"); process.exit(1); }
 const parts = t.access_token.split(".");
 if (parts.length < 2) { console.error("malformed JWT"); process.exit(1); }
@@ -254,16 +278,20 @@ if (payload.iss !== issuer) {
   process.exit(1);
 }
 const aud = Array.isArray(payload.aud) ? payload.aud : (payload.aud ? [payload.aud] : []);
-if (!aud.includes(expectedApiAudience)) {
-  console.error(`token aud missing ${expectedApiAudience}: ${JSON.stringify(aud)}`);
+if (!aud.includes(expectedPaymentAudience)) {
+  console.error(`token aud missing ${expectedPaymentAudience}: ${JSON.stringify(aud)}`);
+  process.exit(1);
+}
+if (aud.includes("commerce-api")) {
+  console.error(`order-service client-credentials token must not default to commerce-api audience: ${JSON.stringify(aud)}`);
   process.exit(1);
 }
 const scopes = (payload.scope || "").split(" ");
-if (!scopes.includes("service.jobs")) {
-  console.error(`token scope missing service.jobs: ${payload.scope}`);
+if (!scopes.includes("payments:authorize")) {
+  console.error(`token scope missing payments:authorize: ${payload.scope}`);
   process.exit(1);
 }
-console.log("real-token claim checks passed (iss, aud, scope)");
+console.log("real-token claim checks passed (iss, aud=payment-service, scope=payments:authorize)");
 NODE
 
 # Optional: live-token check for commerce-api-gateway via Client Credentials.

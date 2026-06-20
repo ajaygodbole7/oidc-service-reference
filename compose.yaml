@@ -87,7 +87,7 @@ services:
       SPRING_PROFILES_ACTIVE: ${AUTH_SERVICE_SPRING_PROFILES_ACTIVE:-local}
       AUTH_CLIENT_ID: ${AUTH_CLIENT_ID:-commerce-auth}
       AUTH_CLIENT_SECRET: ${AUTH_CLIENT_SECRET:-LOCAL_DEV_AUTH_CLIENT_SECRET__CHANGE_BEFORE_DEPLOY}
-      OIDC_SCOPES: ${OIDC_SCOPES:-openid,profile,email,roles,api.audience,api.read,cart:read,cart:write,catalog:write}
+      OIDC_SCOPES: ${OIDC_SCOPES:-openid,profile,email,roles,api.audience,api.read,cart:read,cart:write,catalog:write,orders:read,orders:write}
       OIDC_ROLES_CLAIM_PATH: ${OIDC_ROLES_CLAIM_PATH:-realm_access,roles}
       APP_REFRESH_REQUIRE_ROTATION: ${APP_REFRESH_REQUIRE_ROTATION:-true}
       GATEWAY_CLIENT_ID: ${GATEWAY_CLIENT_ID:-commerce-api-gateway}
@@ -166,6 +166,64 @@ services:
       retries: 18
       start_period: 30s
 
+  payment-service:
+    build:
+      context: .
+      dockerfile: payment-service/Dockerfile
+    environment:
+      SERVER_PORT: 8085
+      MANAGEMENT_PORT: 9085
+      MANAGEMENT_ADDRESS: 127.0.0.1
+      PAYMENT_OIDC_ISSUER_URI: http://localhost:8080/realms/oidc-service-reference
+      PAYMENT_OIDC_AUDIENCE: payment-service
+      PAYMENT_OIDC_EXPECTED_CLIENT_ID: order-service
+      PAYMENT_OIDC_REQUIRED_SCOPE: payments:authorize
+      PAYMENT_OIDC_JWKS_URI: http://keycloak:8080/realms/oidc-service-reference/protocol/openid-connect/certs
+      SPRING_PROFILES_ACTIVE: ${PAYMENT_SERVICE_SPRING_PROFILES_ACTIVE:-local}
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    networks:
+      - oidc-internal
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9085/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 30s
+
+  order-service:
+    build:
+      context: .
+      dockerfile: order-service/Dockerfile
+    environment:
+      ORDER_OIDC_ISSUER_URI: http://localhost:8080/realms/oidc-service-reference
+      ORDER_OIDC_AUDIENCE: commerce-api
+      ORDER_OIDC_JWKS_URI: http://keycloak:8080/realms/oidc-service-reference/protocol/openid-connect/certs
+      ORDER_SPICEDB_TARGET: spicedb:50051
+      ORDER_SPICEDB_PRESHARED_KEY: ${SPICEDB_PRESHARED_KEY:-LOCAL_DEV_SPICEDB_PRESHARED_KEY__CHANGE_BEFORE_DEPLOY}
+      ORDER_SPICEDB_PLAINTEXT: "true"
+      ORDER_PAYMENT_AUTHORIZE_URI: http://payment-service:8085/internal/payments/authorize
+      ORDER_PAYMENT_TOKEN_URI: http://keycloak:8080/realms/oidc-service-reference/protocol/openid-connect/token
+      ORDER_PAYMENT_CLIENT_ID: order-service
+      ORDER_PAYMENT_CLIENT_SECRET: ${ORDER_PAYMENT_CLIENT_SECRET:-LOCAL_DEV_SERVICE_CLIENT_SECRET__CHANGE_BEFORE_DEPLOY}
+      SPRING_PROFILES_ACTIVE: ${ORDER_SERVICE_SPRING_PROFILES_ACTIVE:-local}
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      spicedb:
+        condition: service_healthy
+      payment-service:
+        condition: service_healthy
+    networks:
+      - oidc-internal
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 30s
+
   apisix:
     image: apache/apisix:3.16.0-debian
     depends_on:
@@ -176,6 +234,8 @@ services:
       cart-service:
         condition: service_healthy
       catalog-service:
+        condition: service_healthy
+      order-service:
         condition: service_healthy
     environment:
       APISIX_STAND_ALONE: "true"

@@ -1,0 +1,23 @@
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+order:
+  oidc:
+    issuer-uri: ${ORDER_OIDC_ISSUER_URI:http://keycloak:8080/realms/oidc-service-reference}
+    audience: ${ORDER_OIDC_AUDIENCE:commerce-api}
+    jwks-uri: ${ORDER_OIDC_JWKS_URI:http://keycloak:8080/realms/oidc-service-reference/protocol/openid-connect/certs}
+  spicedb:
+    target: ${ORDER_SPICEDB_TARGET:spicedb:50051}
+    preshared-key: ${SPICEDB_PRESHARED_KEY:LOCAL_DEV_SPICEDB_PRESHARED_KEY__CHANGE_BEFORE_DEPLOY}
+    plaintext: ${ORDER_SPICEDB_PLAINTEXT:true}
+  payment:
+    authorize-uri: ${ORDER_PAYMENT_AUTHORIZE_URI:http://payment-service:8085/internal/payments/authorize}
+    token-uri: ${ORDER_PAYMENT_TOKEN_URI:http://keycloak:8080/realms/oidc-service-reference/protocol/openid-connect/token}
+    client-id: ${ORDER_PAYMENT_CLIENT_ID:order-service}
+    client-secret: ${ORDER_PAYMENT_CLIENT_SECRET:LOCAL_DEV_SERVICE_CLIENT_SECRET__CHANGE_BEFORE_DEPLOY}

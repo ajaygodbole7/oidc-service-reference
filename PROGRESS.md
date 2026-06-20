@@ -22,7 +22,9 @@ Every session must leave these sections populated:
 
 ## Current slice
 
-Order/payment vertical slice — acceptance map pinned; implementation fan-out started.
+Order/payment vertical slice — ACCEPTED 2026-06-20 (live SEC gate green: all five
+SEC-PAYMENT-* / SEC-CHECKOUT-* cases passed in a watched run). This is the last planned
+domain slice; Postgres persistence remains deferred until a human directs it.
 
 Scaffold from `../oidc-reference` is DONE and accepted (2026-06-17 18:15): stack boots
 healthy and `SEC-NO-BROWSER-TOKENS` passed live. Authorization substrate is DONE and
@@ -672,3 +674,26 @@ Append-only, timestamped chronology (newest at the bottom); captures non-commit 
   `sh tests/security/verify-order-payment-security-draft.sh` and `sh scripts/verify-all.sh`.
   Started parallel workers for `order-service/**` and `payment-service/**` +
   `commerce-security-common/**`; orchestrator retains root/shared wiring.
+- 2026-06-20 09:05 PDT — Claude — accepted the order/payment vertical slice from Codex's
+  mid-integration handoff. Integrated order-service + payment-service into the root reactor
+  (added `verify-order-service.sh` / `verify-payment-service.sh`, wired into `verify-all.sh`);
+  implemented the real order→payment S2S client (`HttpPaymentClient`: client-credentials grant
+  for the `order-service` client, calls `/internal/payments/authorize`, fails closed; replaced
+  the fake bean); fixed all five Dockerfiles to copy every module POM (root reactor parse);
+  wired Compose (order-service + payment-service; payment internal-only, no gateway route) and
+  APISIX (`/api/orders` routes; no `/internal/payments`); completed two config seams —
+  `payments:authorize`/`payment.audience` (S2S) and the missing `orders:read`/`orders:write`
+  user scopes (realm + auth-service + Compose). Real bugs found and fixed: payment port is 8085
+  (not 8080) in the S2S URL; an APISIX comment tripped the no-payment-route invariant check; and
+  a context-startup failure — `OrderConfig.paymentClient` injected a `RestClient.Builder` that
+  order-service does not auto-configure, so the container exited 1 on boot (the focused unit
+  tests never loaded the context). Fixed with `RestClient.create()` and added
+  `OrderServiceContextTest` (`@SpringBootTest`) to guard the context-startup seam. Watched live
+  run green via `sh tests/security/verify-order-payment-security-live.sh`: SEC-PAYMENT-NO-BROWSER-ROUTE
+  (gateway 404), SEC-PAYMENT-WRONG-CLIENT (non-order client-credentials token → 401),
+  SEC-PAYMENT-REJECTS-USER-TOKEN (ServiceJwtValidator contract — Direct Access Grants are
+  disabled on every client, so a live user token cannot be minted out-of-band),
+  SEC-CHECKOUT-IDEMPOTENT-REPLAY and SEC-CHECKOUT-IDEMPOTENCY-COLLISION (Playwright). Disk
+  needed a Docker Desktop clean restart mid-effort (the 9-container stack exhausted host disk to
+  ~0.27 GiB); the accepting run completed at ~7.8→5.8 GiB. Tearing down + pruning after the
+  acceptance commit. Next: no further slice without human direction; Postgres stays deferred.

@@ -21,6 +21,10 @@ upstreams:
     type: roundrobin
     nodes:
       "catalog-service:8084": 1
+  - id: order-service
+    type: roundrobin
+    nodes:
+      "order-service:8080": 1
 
 routes:
   - id: api-cart-current
@@ -87,6 +91,28 @@ routes:
     uri: /api/catalog/products/*
     methods: [PATCH]
     upstream_id: catalog-service
+    plugins:
+      bff-session: *bff-session-api
+
+  # Orders: all routes require a session (no anonymous browsing). The internal payment
+  # authorization API is deliberately kept out of this gateway table (service-to-service
+  # only), preserving SEC-PAYMENT-NO-BROWSER-ROUTE.
+  - id: api-order-checkout
+    uri: /api/orders/checkout
+    methods: [POST]
+    upstream_id: order-service
+    plugins:
+      bff-session: *bff-session-api
+  - id: api-order-cancel
+    uri: /api/orders/*/cancel
+    methods: [POST]
+    upstream_id: order-service
+    plugins:
+      bff-session: *bff-session-api
+  - id: api-order-get
+    uri: /api/orders/*
+    methods: [GET]
+    upstream_id: order-service
     plugins:
       bff-session: *bff-session-api
 
