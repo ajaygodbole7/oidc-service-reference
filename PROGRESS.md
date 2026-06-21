@@ -68,8 +68,8 @@ repo's JDK class-file version and fights the enforcer's dependencyConvergence). 
 platform-verification ladder (orchestrator, SpiceDB outage, trace evidence, architecture
 gates) is complete. The final slice, documentation, is in progress: `README.md` and the core
 security trio (`docs/architecture.md`, `docs/authorization-model.md`, `docs/token-model.md`) are
-written. Remaining: `docs/domain-modeling.md`, `docs/security-behind-the-scenes.md`,
-`docs/business-flows.md`, `docs/security-verification.md`, `docs/threat-model.md`, and
+written, as are the builder docs (`docs/domain-modeling.md`, `docs/security-behind-the-scenes.md`).
+Remaining: `docs/business-flows.md`, `docs/security-verification.md`, `docs/threat-model.md`, and
 `docs/production-hardening.md`. (`scripts/up.sh` also references a `SECURITY.md` that does not
 exist — create it or drop the reference.)
 
@@ -868,3 +868,9 @@ Append-only, timestamped chronology (newest at the bottom); captures non-commit 
   Remaining docs: domain-modeling, security-behind-the-scenes, business-flows,
   security-verification, threat-model, production-hardening. Noted that `up.sh` references a
   non-existent `SECURITY.md`.
+- 2026-06-21 — Claude — wrote the builder-audience docs `docs/domain-modeling.md` and
+  `docs/security-behind-the-scenes.md`. Snippets grounded in real source: the `CartController`
+  add-item handler, the `CartApplicationService` gate sequence (requireScope CART_WRITE → resolve
+  cart → requireAllowed WRITE → save), and the `auth.ts` fetch shape (credentials:include +
+  X-XSRF-TOKEN). Caught and fixed a fabricated `request.toCommand()` before commit. Remaining
+  docs: business-flows, security-verification, threat-model, production-hardening.
