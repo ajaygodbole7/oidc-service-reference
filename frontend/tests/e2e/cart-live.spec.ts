@@ -225,6 +225,33 @@ test("SEC-NON-COMMERCE-AUD: non-commerce audience is rejected before cart domain
   expect(response.body).not.toMatch(TOKEN_MATERIAL_RE);
 });
 
+test("SEC-SPICEDB-UNAVAILABLE: cart reads and writes fail closed", async ({
+  page
+}) => {
+  test.skip(process.env.CART_SECURITY_SCENARIO !== "spicedb-unavailable", "requires SpiceDB stopped by the live harness");
+
+  await loginAsAlice(page);
+
+  const read = await apiFetch(page, "/api/cart");
+  expect(read.status).toBe(403);
+  expect(read.body).toContain("resource authorization unavailable");
+  expect(read.body).not.toMatch(TOKEN_MATERIAL_RE);
+
+  const csrf = await csrfHeaders(page);
+  const write = await apiFetch(page, "/api/cart/items", {
+    method: "POST",
+    headers: { ...csrf, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      productId: "sample-product",
+      quantity: 1,
+      unitPrice: 12.5
+    })
+  });
+  expect(write.status).toBe(403);
+  expect(write.body).toContain("resource authorization unavailable");
+  expect(write.body).not.toMatch(TOKEN_MATERIAL_RE);
+});
+
 test("SEC-SPOOFED-IDENTITY-HEADERS: gateway strips browser-supplied identity headers", async ({
   page
 }) => {

@@ -18,6 +18,7 @@ NON_COMMERCE_AUD_SCOPES="openid,profile,email,roles,api.read,cart:read,cart:writ
 requested="${*:-all}"
 stack_ready=0
 default_auth_ready=0
+spicedb_stopped=0
 
 pass() { printf 'PASS %s - %s\n' "$1" "$2"; }
 fail_check() { printf 'FAIL %s - %s\n' "$1" "$2" >&2; exit 1; }
@@ -30,6 +31,32 @@ should_run() {
     *) return 1 ;;
   esac
 }
+
+known_case() {
+  case "$1" in
+    SEC-SCOPE-WITHOUT-RELATIONSHIP|\
+    SEC-SPOOFED-IDENTITY-HEADERS|\
+    SEC-BROWSER-AUTHORIZATION-OVERWRITTEN|\
+    SEC-RELATIONSHIP-REMOVAL-IMMEDIATE|\
+    SEC-RELATIONSHIP-WITHOUT-SCOPE|\
+    SEC-OWNERSHIP-PROVISIONED-FOR-CALLER|\
+    SEC-NO-RESOURCE-HIJACK|\
+    SEC-PROVISIONING-FAILS-CLOSED|\
+    SEC-NON-COMMERCE-AUD|\
+    SEC-SPICEDB-UNAVAILABLE)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+if [ "$requested" != "all" ]; then
+  for id in "$@"; do
+    known_case "$id" || fail_check HARNESS-CART-SECURITY-LIVE "unknown cart SEC case '$id'"
+  done
+fi
 
 wait_service_healthy() {
   service="$1"
@@ -46,6 +73,16 @@ wait_service_healthy() {
     fi
     sleep 2
   done
+}
+
+restart_spicedb() {
+  if [ "$spicedb_stopped" = "1" ]; then
+    info "restarting SpiceDB and restoring local schema/seed relationships"
+    docker compose up -d --no-build spicedb >/dev/null
+    wait_service_healthy spicedb
+    sh scripts/verify-cart-spicedb-live.sh >/dev/null
+    spicedb_stopped=0
+  fi
 }
 
 restore_default_auth() {
@@ -82,6 +119,7 @@ reset_cart_service_for_dynamic_ownership() {
 }
 
 cleanup() {
+  restart_spicedb
   restore_default_auth
 }
 trap cleanup EXIT INT TERM
@@ -190,6 +228,15 @@ fi
 if should_run SEC-NON-COMMERCE-AUD; then
   set_auth_scopes "$NON_COMMERCE_AUD_SCOPES"
   run_case SEC-NON-COMMERCE-AUD 0 non-commerce-aud
+fi
+
+if should_run SEC-SPICEDB-UNAVAILABLE; then
+  restore_default_auth
+  info "stopping SpiceDB to prove cart reads and writes fail closed"
+  docker compose stop spicedb >/dev/null
+  spicedb_stopped=1
+  run_case SEC-SPICEDB-UNAVAILABLE 0 spicedb-unavailable
+  restart_spicedb
 fi
 
 restore_default_auth

@@ -22,6 +22,11 @@ Every session must leave these sections populated:
 
 ## Current slice
 
+Complete platform verification — IN PROGRESS. The one-command live orchestrator exists and
+is green, and `SEC-SPICEDB-UNAVAILABLE` is now accepted as a live cart gate: watched runs
+proved cart reads and writes fail closed while SpiceDB is stopped, then the harness restores
+SpiceDB schema/seed and later catalog/order-payment gates still pass.
+
 Postgres persistence — ACCEPTED 2026-06-20 13:50 PDT. Catalog, cart, order, and payment
 now use local Postgres with Flyway migrations and Spring Data JDBC repositories. Order
 idempotency is Postgres-backed with an insert-only claim, nullable `order_id`, and
@@ -49,14 +54,16 @@ writes succeed only through `catalog:write` plus SpiceDB `store:main#manage`.
 
 ## Exact next action
 
-The live SEC harnesses are now collapsed into one orchestrated command,
+Pick the next platform-verification sub-slice from `PLAN.md`. Recommended next loop:
+Security Trace evidence, because several SEC cases already assert behavior but only fixture
+evidence currently exposes bounded traces. Keep it harness/internal; do not build a
+diagnostics console or user-facing security UI.
+
+The live SEC harnesses are collapsed into one orchestrated command,
 `scripts/verify-live-all.sh` (the live counterpart to the static `verify-all.sh`): it brings
 the stack up once and runs the cart, catalog, and order/payment live gates with each harness's
-SKIP_UP flag. It is green end-to-end against the Postgres-backed stack (commit 915bcbb). The
-next platform/app slice from `PLAN.md` is open (e.g. a real frontend/UI or further platform
-hardening) — confirm direction with the human before adding app surface. Keep Docker rebuilds
-controlled: the host runs near-full and `scripts/up.sh` rebuilds images by default (use
-`LIVE_ALL_SKIP_UP=1` / `*_SKIP_UP=1` to reuse an already-running stack).
+SKIP_UP flag. It is green end-to-end against the Postgres-backed stack with the new
+`SEC-SPICEDB-UNAVAILABLE` cart gate included.
 
 Fresh agents should start with:
 
@@ -79,17 +86,14 @@ add CI/CD; this repo remains local-first.
 
 ## Acceptance gate
 
-Postgres persistence is accepted because these gates passed in watched runs:
-- Compose starts `postgres:18.4` and initializes `catalog_db`, `cart_db`, `order_db`, and
-  `payment_db`.
-- Catalog, cart, order, and payment each have Flyway migrations, Spring Data JDBC
-  repositories, and Testcontainers-backed repository tests.
-- Order checkout claims idempotency before payment, links the order transactionally after
-  persistence, rejects same-key/different-body collisions before payment, and replays
-  same-key/same-body requests without double-authorizing payment.
-- Live cart/catalog/order-payment security harnesses remain green with Postgres enabled.
-- Postgres ownership data remains business data only; `ResourceAuthorizer`/SpiceDB remains
-  the gate-4 authority.
+The current platform-verification sub-slice is accepted because these gates passed in
+watched runs:
+- `SEC-SPICEDB-UNAVAILABLE` stops SpiceDB, then proves cart reads and writes fail closed.
+- The harness restarts SpiceDB and restores schema/seed relationships after the outage case.
+- `LIVE_ALL_SKIP_UP=1 sh scripts/verify-live-all.sh` passes afterward, proving catalog and
+  order/payment live gates still compose after the stop/restart.
+- Harness output remains bounded: stable IDs and pass/fail only, no tokens, cookies, or
+  secrets.
 
 ## Build checklist
 
@@ -131,9 +135,27 @@ Postgres persistence is accepted because these gates passed in watched runs:
 - [ ] Complete platform verification: SpiceDB-unavailable fail-closed, full
       security-verification suite, Security Trace evidence, stable harness check catalog,
       architecture checks, bounded/masked evidence, service-health summaries, and final
-      docs.
+      docs. (`SEC-SPICEDB-UNAVAILABLE` accepted 2026-06-20 19:44 PDT; full platform
+      verification remains open.)
 
 ## Verifier status
+
+Platform verification sub-slice accepted 2026-06-20 19:44 PDT:
+
+```sh
+sh -n tests/security/verify-cart-security-live.sh
+sh -n scripts/verify-live-all.sh
+sh -n scripts/verify-all.sh
+cd frontend && corepack pnpm exec playwright test tests/e2e/cart-live.spec.ts --grep SEC-SPICEDB-UNAVAILABLE --list
+sh tests/security/verify-cart-security-live.sh SEC-SPICEDB-UNAVAILABLE
+LIVE_ALL_SKIP_UP=1 sh scripts/verify-live-all.sh
+```
+
+Result: PASS. The narrow cart live gate stopped SpiceDB and proved `/api/cart` reads plus
+`/api/cart/items` writes deny with `resource authorization unavailable` while token material
+stays hidden. The harness then restarted SpiceDB and restored schema/seed relationships.
+The full live orchestrator passed with the new cart gate included, then catalog and
+order/payment live gates passed afterward.
 
 Postgres persistence accepted 2026-06-20 13:50 PDT:
 
@@ -473,9 +495,10 @@ verification.
 
 ## Blockers
 
-- Host disk tight: `/System/Volumes/Data` at about 3.5 GiB free / 99% used after the
-  2026-06-20 Postgres acceptance verification. Do not run full-stack rebuilds casually;
-  check disk first, prefer skip-up/no-build modes, and prune after live gates.
+- Host disk tight: `/System/Volumes/Data` at about 4.1 GiB free / 99% used during the
+  2026-06-20 `SEC-SPICEDB-UNAVAILABLE` verification after repulling/rebuilding the stack.
+  Do not run full-stack rebuilds casually; check disk first, prefer skip-up/no-build modes,
+  and prune after live gates.
 - Local shell has Node 24.12.0; `frontend/package.json` pins Node 26.3.0, so pnpm emits
   an engine warning until Node is switched.
 - Harness evidence belongs in verifier output, tests, scripts, and `PROGRESS.md`.
@@ -489,10 +512,12 @@ verification.
 
 The scaffold, authorization-substrate, cart vertical slice, dynamic cart ownership
 provisioning, catalog vertical slice, order/payment vertical slice, and Postgres persistence
-slice are accepted locally. The stack was left running for verification and should be torn
-down/pruned after commit if no immediate follow-up needs it. Next work should be a
-platform-verification/harness slice or frontend/UI slice, not another persistence migration.
-Keep the four gates visible in code and traces; Postgres owner columns are not authorization.
+slice are accepted locally. Platform verification is in progress; `SEC-SPICEDB-UNAVAILABLE`
+is accepted and included in `verify-live-all.sh`. The stack was left running for
+verification and should be torn down/pruned after commit if no immediate follow-up needs it.
+Next recommended loop is harness/internal Security Trace evidence, not another persistence
+migration and not a diagnostics console. Keep the four gates visible in code and traces;
+Postgres owner columns are not authorization.
 
 ## Session log
 
@@ -740,4 +765,15 @@ Append-only, timestamped chronology (newest at the bottom); captures non-commit 
   merchant write → gate-3 403) — now the full set incl `catalog:write`, `orders:read`,
   `orders:write`. Watched green: `LIVE_ALL_SKIP_UP=1 sh scripts/verify-live-all.sh` — all three
   live SEC gates passed (15 SEC PASS, 10 Playwright) against the 10-container Postgres-backed
-  stack. Committed 915bcbb. Tore the stack down + pruned afterward.
+  stack. Committed 0663ab4. Tore the stack down + pruned afterward.
+- 2026-06-20 19:44 PDT — Codex — checked Claude's latest commit and moved the next loop into
+  platform verification. Added live `SEC-SPICEDB-UNAVAILABLE` to the cart harness and case
+  catalog: the harness stops SpiceDB, verifies cart reads and writes fail closed with bounded
+  `resource authorization unavailable` evidence and no token material, then restarts SpiceDB
+  and restores schema/seed relationships. Also added a known-case guard so the cart live
+  harness cannot silently pass an unknown requested `SEC-*` ID. Fixed the stale Claude commit
+  id in this handoff from `915bcbb` to the actual `0663ab4`. Verified green:
+  shell syntax checks, Playwright case listing, `sh tests/security/verify-cart-security-live.sh
+  SEC-SPICEDB-UNAVAILABLE`, and `LIVE_ALL_SKIP_UP=1 sh scripts/verify-live-all.sh` after the
+  stack was up. The full live run passed cart, catalog, and order/payment gates with the new
+  outage proof included.

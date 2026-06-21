@@ -131,7 +131,7 @@ pending SEC-PAYMENT-WRONG-CLIENT "run sh tests/security/verify-order-payment-sec
 pending SEC-PAYMENT-REJECTS-USER-TOKEN "run sh tests/security/verify-order-payment-security-live.sh SEC-PAYMENT-REJECTS-USER-TOKEN for the payment audience proof"
 pending SEC-CHECKOUT-IDEMPOTENT-REPLAY "run sh tests/security/verify-order-payment-security-live.sh SEC-CHECKOUT-IDEMPOTENT-REPLAY for checkout replay"
 pending SEC-CHECKOUT-IDEMPOTENCY-COLLISION "run sh tests/security/verify-order-payment-security-live.sh SEC-CHECKOUT-IDEMPOTENCY-COLLISION for checkout collision"
-pending SEC-SPICEDB-UNAVAILABLE "requires SpiceDB"
+pending SEC-SPICEDB-UNAVAILABLE "run sh tests/security/verify-cart-security-live.sh SEC-SPICEDB-UNAVAILABLE for the local SpiceDB outage proof"
 pending SEC-RELATIONSHIP-REMOVAL-IMMEDIATE "run sh tests/security/verify-cart-security-live.sh SEC-RELATIONSHIP-REMOVAL-IMMEDIATE for the local relationship removal fixture"
 pending HARNESS-CART-SPICEDB-LIVE "run CART_SPICEDB_LIVE=1 sh scripts/verify-cart-service.sh or sh scripts/verify-cart-spicedb-live.sh for the real cart SpiceDB argument proof"
 pending HARNESS-SPICEDB-LIVE "run scripts/verify-spicedb-live.sh for schema load, seed apply, and real adapter contract"
