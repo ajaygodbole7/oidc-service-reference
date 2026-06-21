@@ -69,8 +69,8 @@ platform-verification ladder (orchestrator, SpiceDB outage, trace evidence, arch
 gates) is complete. The final slice, documentation, is in progress: `README.md` and the core
 security trio (`docs/architecture.md`, `docs/authorization-model.md`, `docs/token-model.md`) are
 written, as are the builder docs (`docs/domain-modeling.md`, `docs/security-behind-the-scenes.md`).
-Remaining: `docs/business-flows.md`, `docs/security-verification.md`, `docs/threat-model.md`, and
-`docs/production-hardening.md`. (`scripts/up.sh` also references a `SECURITY.md` that does not
+The operator docs (`docs/business-flows.md`, `docs/security-verification.md`) are also written.
+Remaining: `docs/threat-model.md` and `docs/production-hardening.md`. (`scripts/up.sh` also references a `SECURITY.md` that does not
 exist — create it or drop the reference.)
 
 The live SEC harnesses are collapsed into one orchestrated command,
@@ -874,3 +874,9 @@ Append-only, timestamped chronology (newest at the bottom); captures non-commit 
   cart → requireAllowed WRITE → save), and the `auth.ts` fetch shape (credentials:include +
   X-XSRF-TOKEN). Caught and fixed a fabricated `request.toCommand()` before commit. Remaining
   docs: business-flows, security-verification, threat-model, production-hardening.
+- 2026-06-21 — Claude — wrote the operator-audience docs `docs/business-flows.md` (browse → sign
+  in → cart with dynamic provisioning → checkout with idempotency and S2S payment → order
+  read/cancel, grounded in the real APISIX routes and the order schema's read/cancel split) and
+  `docs/security-verification.md` (the four verify gates, the checked-in SEC-* catalogs, the
+  ARCH-* checks, and evidence discipline). Doc/code-synced. Remaining docs: threat-model,
+  production-hardening.
