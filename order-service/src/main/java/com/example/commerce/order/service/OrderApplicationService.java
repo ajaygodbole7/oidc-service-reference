@@ -60,25 +60,6 @@ public final class OrderApplicationService {
       OrderRepository orderRepository,
       CartLookup cartLookup,
       IdempotencyRepository idempotencyRepository,
-      PaymentClient paymentClient,
-      ScopeAuthorizer scopeAuthorizer,
-      ResourceAuthorizer resourceAuthorizer) {
-    this(
-        orderRepository,
-        cartLookup,
-        idempotencyRepository,
-        new OrderCheckoutPersistence(orderRepository, idempotencyRepository),
-        paymentClient,
-        scopeAuthorizer,
-        resourceAuthorizer,
-        () -> new OrderId(UUID.randomUUID().toString()),
-        Clock.systemUTC());
-  }
-
-  public OrderApplicationService(
-      OrderRepository orderRepository,
-      CartLookup cartLookup,
-      IdempotencyRepository idempotencyRepository,
       OrderCheckoutPersistence checkoutPersistence,
       PaymentClient paymentClient,
       ScopeAuthorizer scopeAuthorizer,

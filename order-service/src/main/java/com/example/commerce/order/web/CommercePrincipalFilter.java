@@ -33,7 +33,7 @@ final class CommercePrincipalFilter extends OncePerRequestFilter {
   @Override
   protected boolean shouldNotFilter(HttpServletRequest request) {
     String path = request.getRequestURI();
-    return !path.equals("/api/orders/checkout") && !path.startsWith("/api/orders/");
+    return !path.startsWith("/api/orders/");
   }
 
   @Override

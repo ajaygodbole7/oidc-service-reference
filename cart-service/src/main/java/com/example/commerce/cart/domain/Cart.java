@@ -45,8 +45,9 @@ public final class Cart {
         .filter(item -> item.productId().equals(productId))
         .findFirst();
     if (existing.isPresent()) {
-      items.remove(existing.get());
-      items.add(existing.get().withAdditionalQuantity(quantity));
+      CartItem current = existing.get();
+      items.remove(current);
+      items.add(current.withAdditionalQuantity(quantity));
       return;
     }
     items.add(new CartItem(productId, quantity, unitPrice));
