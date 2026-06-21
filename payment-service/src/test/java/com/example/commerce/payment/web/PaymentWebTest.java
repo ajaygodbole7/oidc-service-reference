@@ -13,6 +13,8 @@ import com.example.commerce.security.InvalidTokenException;
 import com.example.commerce.security.ServicePrincipal;
 import com.example.commerce.web.error.CommerceErrorProperties;
 import com.example.commerce.web.error.GlobalExceptionHandler;
+import com.example.commerce.web.error.ProblemDetailFactory;
+import com.example.commerce.web.error.ProblemDetailWriter;
 import com.example.commerce.web.tsid.TsidGenerator;
 import java.time.Clock;
 import java.time.Instant;
@@ -24,9 +26,12 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.ProblemDetail;
+import org.springframework.http.converter.json.ProblemDetailJacksonMixin;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
+import tools.jackson.databind.json.JsonMapper;
 
 class PaymentWebTest {
 
@@ -37,7 +42,7 @@ class PaymentWebTest {
       Clock.fixed(Instant.parse("2026-06-20T12:00:00Z"), ZoneOffset.UTC));
   private final MockMvc mockMvc = MockMvcBuilders
       .standaloneSetup(new PaymentController(service))
-      .addFilters(new ServicePrincipalFilter(this::principalForToken))
+      .addFilters(new ServicePrincipalFilter(this::principalForToken, problemDetailWriter()))
       .setControllerAdvice(new GlobalExceptionHandler(errorProperties()))
       .setValidator(validator())
       .build();
@@ -69,7 +74,11 @@ class PaymentWebTest {
             .content(paymentJson("order-1", "alice", "19.99")))
         .andExpect(status().isUnauthorized())
         .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-        .andExpect(jsonPath("$.title").value("Unauthorized"));
+        .andExpect(jsonPath("$.type").value(typeFor("invalid-token")))
+        .andExpect(jsonPath("$.title").value("Unauthorized"))
+        .andExpect(jsonPath("$.status").value(401))
+        .andExpect(jsonPath("$.detail").value("invalid bearer token"))
+        .andExpect(jsonPath("$.errorCode").value("INVALID_TOKEN"));
 
     assertThat(repository.saveCount()).isZero();
   }
@@ -82,7 +91,12 @@ class PaymentWebTest {
             .contentType(MediaType.APPLICATION_JSON)
             .content(paymentJson("order-1", "alice", "19.99")))
         .andExpect(status().isUnauthorized())
-        .andExpect(jsonPath("$.detail").value("invalid bearer token"));
+        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+        .andExpect(jsonPath("$.type").value(typeFor("invalid-token")))
+        .andExpect(jsonPath("$.title").value("Unauthorized"))
+        .andExpect(jsonPath("$.status").value(401))
+        .andExpect(jsonPath("$.detail").value("invalid bearer token"))
+        .andExpect(jsonPath("$.errorCode").value("INVALID_TOKEN"));
 
     assertThat(repository.saveCount()).isZero();
   }
@@ -220,6 +234,12 @@ class PaymentWebTest {
     CommerceErrorProperties properties = new CommerceErrorProperties();
     properties.setBaseUrl("https://errors.example.com/payment");
     return properties;
+  }
+
+  private static ProblemDetailWriter problemDetailWriter() {
+    return new ProblemDetailWriter(
+        new ProblemDetailFactory(errorProperties()),
+        JsonMapper.builder().addMixIn(ProblemDetail.class, ProblemDetailJacksonMixin.class).build());
   }
 
   private static final class RecordingRepository implements PaymentAuthorizationRepository {

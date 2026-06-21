@@ -7,7 +7,7 @@ const KEYCLOAK_AUTH_RE = new RegExp(
 );
 
 const TOKEN_MATERIAL_RE =
-  /access_token|refresh_token|id_token|[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}/i;
+  /\b(?:access_token|refresh_token|id_token)\b|[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}/i;
 
 type FetchResult = { readonly status: number; readonly body: string };
 

@@ -6,6 +6,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import org.slf4j.MDC;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
@@ -14,6 +16,9 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * trace id into the next request. The advice reads the same MDC key for the problem-detail
  * {@code traceId} extension.
  */
+// Runs before the per-service auth filters so a filter-written 401 (and every log line) carries the
+// trace id that the GlobalExceptionHandler / ProblemDetailWriter read from MDC.
+@Order(Ordered.HIGHEST_PRECEDENCE)
 public final class TraceIdFilter extends OncePerRequestFilter {
 
   /** Inbound header set by the gateway. */

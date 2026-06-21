@@ -37,8 +37,11 @@ type DecisionTrace = {
   readonly evidence: Record<string, string>;
 };
 
+// Leak guard: claim names are matched as whole words (\b) so a legitimate error-code constant
+// such as "INVALID_TOKEN" is not flagged, while a real id_token/access_token/refresh_token claim
+// key and any JWT-shaped string still are.
 const TOKEN_MATERIAL_RE =
-  /access_token|refresh_token|id_token|[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}/i;
+  /\b(?:access_token|refresh_token|id_token)\b|[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}/i;
 
 async function loginAs(page: Page, username: string, password: string = username): Promise<void> {
   await page.goto("/");

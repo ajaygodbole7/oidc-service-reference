@@ -9,7 +9,7 @@ const KEYCLOAK_AUTH_RE = new RegExp(
 // Same token-material guard the cart live suite uses: no access/refresh/id token
 // or JWT-shaped string may ever appear in a browser-visible response body.
 const TOKEN_MATERIAL_RE =
-  /access_token|refresh_token|id_token|[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}/i;
+  /\b(?:access_token|refresh_token|id_token)\b|[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}/i;
 
 // Canonical product TSID for the seeded "starter-mug" product (catalog now mints
 // TSIDs; ids are no longer human slugs).

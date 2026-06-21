@@ -2,6 +2,8 @@ package com.example.commerce.web.autoconfigure;
 
 import com.example.commerce.web.error.CommerceErrorProperties;
 import com.example.commerce.web.error.GlobalExceptionHandler;
+import com.example.commerce.web.error.ProblemDetailFactory;
+import com.example.commerce.web.error.ProblemDetailWriter;
 import com.example.commerce.web.pagination.CommercePaginationProperties;
 import com.example.commerce.web.pagination.CursorPaginator;
 import com.example.commerce.web.tsid.HypersistenceTsidGenerator;
@@ -24,8 +26,21 @@ public class CommerceWebAutoConfiguration {
 
   @Bean
   @ConditionalOnMissingBean
-  public GlobalExceptionHandler commerceGlobalExceptionHandler(CommerceErrorProperties properties) {
-    return new GlobalExceptionHandler(properties);
+  public ProblemDetailFactory commerceProblemDetailFactory(CommerceErrorProperties properties) {
+    return new ProblemDetailFactory(properties);
+  }
+
+  @Bean
+  @ConditionalOnMissingBean
+  public ProblemDetailWriter commerceProblemDetailWriter(
+      ProblemDetailFactory factory, tools.jackson.databind.ObjectMapper objectMapper) {
+    return new ProblemDetailWriter(factory, objectMapper);
+  }
+
+  @Bean
+  @ConditionalOnMissingBean
+  public GlobalExceptionHandler commerceGlobalExceptionHandler(ProblemDetailFactory factory) {
+    return new GlobalExceptionHandler(factory);
   }
 
   @Bean

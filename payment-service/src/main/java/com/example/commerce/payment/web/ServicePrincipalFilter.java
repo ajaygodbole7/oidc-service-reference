@@ -3,6 +3,7 @@ package com.example.commerce.payment.web;
 import com.example.commerce.security.InvalidTokenException;
 import com.example.commerce.security.ServiceJwtValidator;
 import com.example.commerce.security.ServicePrincipal;
+import com.example.commerce.web.error.ProblemDetailWriter;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -12,7 +13,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -23,14 +24,17 @@ final class ServicePrincipalFilter extends OncePerRequestFilter {
   private static final String ATTRIBUTE = "servicePrincipal";
 
   private final PaymentTokenValidator tokenValidator;
+  private final ProblemDetailWriter problemDetailWriter;
 
   @Autowired
-  ServicePrincipalFilter(ServiceJwtValidator validator) {
+  ServicePrincipalFilter(ServiceJwtValidator validator, ProblemDetailWriter problemDetailWriter) {
     this.tokenValidator = validator::validate;
+    this.problemDetailWriter = problemDetailWriter;
   }
 
-  ServicePrincipalFilter(PaymentTokenValidator tokenValidator) {
+  ServicePrincipalFilter(PaymentTokenValidator tokenValidator, ProblemDetailWriter problemDetailWriter) {
     this.tokenValidator = tokenValidator;
+    this.problemDetailWriter = problemDetailWriter;
   }
 
   @Override
@@ -77,14 +81,10 @@ final class ServicePrincipalFilter extends OncePerRequestFilter {
     return cause.getClass().getSimpleName() + ": " + message.replaceAll("[\\r\\n]+", " ");
   }
 
-  private static void unauthorized(
+  private void unauthorized(
       HttpServletResponse response, String authenticateHeader, String detail) throws IOException {
-    response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
     response.setHeader(HttpHeaders.WWW_AUTHENTICATE, authenticateHeader);
-    response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
-    response.getWriter().write("""
-        {"type":"about:blank","title":"Unauthorized","status":401,"detail":"%s"}\
-        """.formatted(detail));
+    problemDetailWriter.write(response, HttpStatus.UNAUTHORIZED, "invalid-token", "Unauthorized", detail);
   }
 
   @FunctionalInterface

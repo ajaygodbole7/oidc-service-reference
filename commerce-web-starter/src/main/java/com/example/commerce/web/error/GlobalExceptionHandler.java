@@ -3,9 +3,6 @@ package com.example.commerce.web.error;
 import com.example.commerce.security.AuthorizationDeniedException;
 import com.example.commerce.security.AuthorizationUnavailableException;
 import com.example.commerce.security.InvalidTokenException;
-import java.net.URI;
-import java.time.Instant;
-import java.util.Locale;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -41,10 +38,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
   private static final Logger LOG = LoggerFactory.getLogger(GlobalExceptionHandler.class);
   private static final String TRACE_ID_MDC_KEY = "traceId";
 
-  private final CommerceErrorProperties properties;
+  private final ProblemDetailFactory problemDetailFactory;
 
   public GlobalExceptionHandler(CommerceErrorProperties properties) {
-    this.properties = properties;
+    this(new ProblemDetailFactory(properties));
+  }
+
+  public GlobalExceptionHandler(ProblemDetailFactory problemDetailFactory) {
+    this.problemDetailFactory = problemDetailFactory;
   }
 
   // ---- shared domain hierarchy: status follows the sealed family, slug + message come from the throw
@@ -169,28 +170,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
   }
 
   private ProblemDetail problem(HttpStatus status, String title, String slug, String detail) {
-    ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
-    problem.setTitle(title);
-    problem.setType(URI.create(typeFor(slug)));
-    problem.setProperty("errorCode", errorCode(slug));
-    problem.setProperty("timestamp", Instant.now().toString());
-    String traceId = currentTraceId();
-    if (traceId != null) {
-      problem.setProperty("traceId", traceId);
-    }
-    return problem;
-  }
-
-  private String typeFor(String slug) {
-    String base = properties.getBaseUrl();
-    if (base.endsWith("/")) {
-      return base + slug;
-    }
-    return base + "/" + slug;
-  }
-
-  private static String errorCode(String slug) {
-    return slug.toUpperCase(Locale.ROOT).replace('-', '_');
+    return problemDetailFactory.of(status, slug, title, detail);
   }
 
   private static @org.jspecify.annotations.Nullable String currentTraceId() {
