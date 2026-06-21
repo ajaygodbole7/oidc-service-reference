@@ -44,6 +44,27 @@ assert_import_present() {
   grep -REq "$pattern" "$dir" 2>/dev/null || fail_check "$id" "$purpose"
 }
 
+# Frontend SPA app source = .ts/.tsx under frontend/src, excluding test files (which
+# legitimately name tokens in assertions/regexes). find is used instead of grep
+# --include/--exclude because BSD grep silently scans nothing with those flags here.
+fe_app_files() {
+  find frontend/src -type f \( -name '*.ts' -o -name '*.tsx' \) \
+    ! -name '*.test.ts' ! -name '*.test.tsx' ! -name 'test-setup.ts' 2>/dev/null
+}
+
+# Fail if any SPA app file matches $pattern. Fails loudly when zero files are scanned —
+# a gate that greps nothing is a false-green.
+fe_assert_absent() {
+  pattern="$1"; id="$2"; purpose="$3"
+  files="$(fe_app_files)"
+  [ -n "$files" ] || fail_check "$id" "no SPA source files found to scan; $purpose"
+  if printf '%s\n' "$files" | tr '\n' '\0' | xargs -0 grep -En "$pattern" \
+      >/tmp/oidc-service-reference-arch.out 2>/dev/null; then
+    cat /tmp/oidc-service-reference-arch.out >&2
+    fail_check "$id" "$purpose"
+  fi
+}
+
 info "architecture boundary gate (source-import layering invariants)"
 info "evidence is bounded: stable check IDs and pass/fail only; no source bodies are printed unless a rule fails"
 
@@ -79,5 +100,20 @@ for svc in cart catalog order; do
     "ARCH-GATE-RESOURCE-PRESENT-$svc" "service layer must invoke the SpiceDB resource gate: $svc"
   pass "ARCH-GATES-PRESENT-$svc" "$svc service invokes both the scope and resource gates"
 done
+
+# Frontend SPA: the browser token boundary, enforced structurally on app source.
+# Complements frontend/src/architecture.test.ts (vitest, run by verify-frontend.sh): this is
+# fast, static, dependency-free, and runs inside verify-all without pnpm or a live stack.
+if [ -d frontend/src ]; then
+  fe_assert_absent "access_token|refresh_token|id_token" \
+    "ARCH-FE-NO-TOKEN-NAMES" "SPA source must never name access/refresh/id tokens; tokens stay server-side"
+  fe_assert_absent "[Aa]uthorization" \
+    "ARCH-FE-NO-AUTHZ-HEADER" "SPA source must not set an Authorization header; the gateway injects the bearer"
+  fe_assert_absent "openid-connect/token|client_secret|grant_type=" \
+    "ARCH-FE-NO-DIRECT-IDP" "SPA source must not call the IdP/token endpoint directly; it uses /auth and /api only"
+  fe_assert_absent "(localStorage|sessionStorage)\.(setItem|clear|removeItem)|document\.cookie[[:space:]]*=" \
+    "ARCH-FE-NO-AUTH-STORAGE" "SPA source must not write auth state to web storage or document.cookie"
+  pass "ARCH-FE-TOKEN-BOUNDARY" "SPA app source: no token names, no Authorization header, no direct IdP calls, no auth-state storage writes"
+fi
 
 success "architecture boundary gate passed"

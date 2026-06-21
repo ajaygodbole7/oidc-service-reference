@@ -60,7 +60,10 @@ Architecture gates are now in place: `scripts/verify-architecture.sh` (wired int
 `verify-all.sh`) enforces the layering invariants by source-import inspection — domain purity,
 web never importing persistence, and the gate authorizers (ScopeAuthorizer/ResourceAuthorizer)
 used only at the service boundary, plus a positive check that cart/catalog/order actually
-invoke both gates. It is source-based on purpose (Java-version-proof; ArchUnit/ASM lags this
+invoke both gates. It also covers the frontend browser token boundary on SPA app source (no
+token names, no Authorization header, no direct IdP calls, no auth-state storage writes),
+complementing the heavier vitest in `verify-frontend.sh`. It is source-based on purpose
+(Java-version-proof; ArchUnit/ASM lags this
 repo's JDK class-file version and fights the enforcer's dependencyConvergence). The
 platform-verification ladder (orchestrator, SpiceDB outage, trace evidence, architecture
 gates) is now substantially complete; pick the next slice from `PLAN.md` and confirm direction
@@ -842,3 +845,13 @@ Append-only, timestamped chronology (newest at the bottom); captures non-commit 
   domain `org.springframework` import fails `ARCH-DOMAIN-PURE-cart`; removing a service's
   `ScopeAuthorizer` import fails `ARCH-GATE-SCOPE-PRESENT-cart`), both reverted. Static-only,
   no Docker.
+- 2026-06-20 16:40 PDT — Claude — extended `scripts/verify-architecture.sh` with a frontend
+  section enforcing the SPA browser token boundary on app source (App.tsx/main.tsx/auth.ts;
+  test files excluded): no token names (access/refresh/id), no Authorization header, no direct
+  IdP/token-endpoint/client_secret calls, and no auth-state storage or document.cookie writes.
+  Complements `frontend/src/architecture.test.ts` (vitest, run by the heavier verify-frontend.sh)
+  by giving verify-all fast, pnpm-free, stack-free static coverage. Used `find` to enumerate app
+  files after a positive control caught that BSD `grep --include/--exclude` silently scans nothing
+  here (a false-green); the gate now fails loudly if it ever scans zero files. Verified green;
+  teeth proven (an `access_token` reference fails ARCH-FE-NO-TOKEN-NAMES; a `localStorage.setItem`
+  fails ARCH-FE-NO-AUTH-STORAGE), both reverted.
