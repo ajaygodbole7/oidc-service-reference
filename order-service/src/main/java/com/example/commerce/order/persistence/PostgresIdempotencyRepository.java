@@ -7,12 +7,15 @@ import com.example.commerce.order.service.IdempotencyRepository;
 import java.util.Optional;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Postgres-backed checkout idempotency. The unique {@code (subject, idempotency_key)}
  * constraint is the atomic claim gate; no read-then-write shortcut decides ownership.
  */
-public final class PostgresIdempotencyRepository implements IdempotencyRepository {
+// Non-final so Spring can create the CGLIB proxy for @Transactional(REQUIRES_NEW) on claim().
+public class PostgresIdempotencyRepository implements IdempotencyRepository {
 
   private final OrderIdempotencyRowRepository rows;
   private final JdbcAggregateTemplate aggregateTemplate;
@@ -30,12 +33,16 @@ public final class PostgresIdempotencyRepository implements IdempotencyRepositor
   }
 
   @Override
-  public boolean claim(String subject, IdempotencyKey key, String requestFingerprint) {
+  @Transactional(propagation = Propagation.REQUIRES_NEW)
+  public boolean claim(String subject, IdempotencyKey key, String requestFingerprint, OrderId reservedOrderId) {
     try {
       aggregateTemplate.insert(new OrderIdempotencyRow(
-          null, subject, key.value(), requestFingerprint, null));
+          null, subject, key.value(), requestFingerprint, reservedOrderId.value()));
       return true;
     } catch (DuplicateKeyException exception) {
+      if (!isIdempotencyKeyConflict(exception)) {
+        throw exception;
+      }
       return false;
     }
   }
@@ -44,6 +51,9 @@ public final class PostgresIdempotencyRepository implements IdempotencyRepositor
   public void linkOrder(String subject, IdempotencyKey key, OrderId orderId) {
     OrderIdempotencyRow existing = rows.findBySubjectAndIdempotencyKey(subject, key.value())
         .orElseThrow(() -> new IllegalStateException("idempotency record not claimed"));
+    if (!orderId.value().equals(existing.orderId())) {
+      throw new IllegalStateException("idempotency record linked to a different order");
+    }
     aggregateTemplate.update(new OrderIdempotencyRow(
         existing.id(),
         existing.subject(),
@@ -53,11 +63,16 @@ public final class PostgresIdempotencyRepository implements IdempotencyRepositor
   }
 
   private static IdempotencyRecord toDomain(OrderIdempotencyRow row) {
-    OrderId linkedOrderId = row.orderId() == null ? null : new OrderId(row.orderId());
     return new IdempotencyRecord(
         row.subject(),
         new IdempotencyKey(row.idempotencyKey()),
         row.requestFingerprint(),
-        linkedOrderId);
+        new OrderId(row.orderId()));
+  }
+
+  private static boolean isIdempotencyKeyConflict(DuplicateKeyException exception) {
+    String message = String.valueOf(exception.getMostSpecificCause().getMessage());
+    return message.contains("order_idempotency_subject_idempotency_key_key")
+        || message.contains("order_idempotency_subject_idempotency_key");
   }
 }

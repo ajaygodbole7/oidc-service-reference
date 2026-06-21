@@ -9,7 +9,6 @@ import com.example.commerce.cart.domain.ProductId;
 import com.example.commerce.cart.domain.Quantity;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 
@@ -49,13 +48,13 @@ public final class PostgresCartRepository implements CartRepository {
   }
 
   private static CartRow toRow(Cart cart) {
-    Set<CartItemRow> items = cart.items().stream()
+    List<CartItemRow> items = cart.items().stream()
         .map(item -> new CartItemRow(
             item.productId().value(),
             item.quantity().value(),
             item.unitPrice().amount(),
             item.unitPrice().currency()))
-        .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
+        .collect(Collectors.toList());
     return new CartRow(cart.id().value(), cart.ownerSub(), items);
   }
 

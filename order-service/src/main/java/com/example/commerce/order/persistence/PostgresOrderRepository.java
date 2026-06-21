@@ -10,8 +10,8 @@ import com.example.commerce.order.domain.OrderStatus;
 import com.example.commerce.order.domain.ProductId;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import java.util.stream.Collectors;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 
 /**
@@ -38,19 +38,24 @@ public final class PostgresOrderRepository implements OrderRepository {
     if (rows.existsById(order.id().value())) {
       aggregateTemplate.update(row);
     } else {
-      aggregateTemplate.insert(row);
+      try {
+        aggregateTemplate.insert(row);
+      } catch (DuplicateKeyException concurrentInsert) {
+        // A concurrent recovery for the same reserved order id won the insert; converge.
+        aggregateTemplate.update(row);
+      }
     }
     return order.copy();
   }
 
   private static OrderRow toRow(Order order) {
-    Set<OrderLineRow> lines = order.lines().stream()
+    List<OrderLineRow> lines = order.lines().stream()
         .map(line -> new OrderLineRow(
             line.productId().value(),
             line.quantity(),
             line.unitPrice().amount(),
             line.unitPrice().currency()))
-        .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
+        .collect(Collectors.toList());
     return new OrderRow(
         order.id().value(),
         order.ownerSub(),

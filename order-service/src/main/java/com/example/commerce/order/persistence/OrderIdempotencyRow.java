@@ -11,5 +11,5 @@ record OrderIdempotencyRow(
     String subject,
     @Column("idempotency_key") String idempotencyKey,
     @Column("request_fingerprint") String requestFingerprint,
-    @Column("order_id") @Nullable String orderId) {
+    @Column("order_id") String orderId) {
 }

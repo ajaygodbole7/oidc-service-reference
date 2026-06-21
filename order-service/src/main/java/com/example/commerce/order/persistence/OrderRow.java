@@ -2,7 +2,7 @@ package com.example.commerce.order.persistence;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.Set;
+import java.util.List;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.MappedCollection;
@@ -21,5 +21,5 @@ record OrderRow(
     @Column("payment_authorization_id") String paymentAuthorizationId,
     @Column("created_at") Instant createdAt,
     String status,
-    @MappedCollection(idColumn = "order_id") Set<OrderLineRow> lines) {
+    @MappedCollection(idColumn = "order_id", keyColumn = "line_position") List<OrderLineRow> lines) {
 }

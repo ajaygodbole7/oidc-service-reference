@@ -1,6 +1,6 @@
 package com.example.commerce.cart.persistence;
 
-import java.util.Set;
+import java.util.List;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.MappedCollection;
@@ -14,5 +14,5 @@ import org.springframework.data.relational.core.mapping.Table;
 record CartRow(
     @Id String id,
     @Column("owner_sub") String ownerSub,
-    @MappedCollection(idColumn = "cart_id") Set<CartItemRow> items) {
+    @MappedCollection(idColumn = "cart_id", keyColumn = "item_position") List<CartItemRow> items) {
 }

@@ -108,7 +108,18 @@ if command -v docker >/dev/null 2>&1; then
       if [ -n "$missing_db" ]; then
         fail_check HARNESS-POSTGRES-INIT "missing database(s):$missing_db; recreate the local postgres-data volume or run a migration-safe init repair"
       fi
-      pass HARNESS-POSTGRES-INIT "catalog_db, cart_db, order_db, and payment_db exist"
+      unmigrated_db=""
+      for db in catalog_db cart_db order_db payment_db; do
+        if ! docker compose exec -T postgres psql \
+            -U "${POSTGRES_USER:-commerce}" -d "$db" -tAc "SELECT 1 FROM flyway_schema_history WHERE success LIMIT 1" 2>/dev/null \
+            | grep -q 1; then
+          unmigrated_db="$unmigrated_db $db"
+        fi
+      done
+      if [ -n "$unmigrated_db" ]; then
+        fail_check HARNESS-POSTGRES-INIT "database(s) exist but have no applied Flyway migration:$unmigrated_db"
+      fi
+      pass HARNESS-POSTGRES-INIT "catalog_db, cart_db, order_db, and payment_db exist and are Flyway-migrated"
     fi
   else
     pending HARNESS-SERVICE-HEALTH "compose stack is not running; run scripts/up.sh when ready"

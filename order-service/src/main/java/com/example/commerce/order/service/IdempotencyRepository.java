@@ -8,7 +8,7 @@ public interface IdempotencyRepository {
 
   Optional<IdempotencyRecord> find(String subject, IdempotencyKey key);
 
-  boolean claim(String subject, IdempotencyKey key, String requestFingerprint);
+  boolean claim(String subject, IdempotencyKey key, String requestFingerprint, OrderId reservedOrderId);
 
   void linkOrder(String subject, IdempotencyKey key, OrderId orderId);
 }

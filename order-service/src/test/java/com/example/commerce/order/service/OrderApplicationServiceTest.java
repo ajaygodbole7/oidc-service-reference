@@ -150,11 +150,12 @@ class OrderApplicationServiceTest {
 
   @Test
   void idempotent_replay_returns_same_order_without_double_authorizing_payment() {
+    RecordingAuthorizationClient authorizationClient = authorizationClientWithAliceCartRead();
     RecordingPaymentClient paymentClient = new RecordingPaymentClient();
     OrderApplicationService service = service(
         new RecordingOrderRepository(List.of()),
         cartLookup(),
-        authorizationClientWithAliceCartRead(),
+        authorizationClient,
         paymentClient);
     CommercePrincipal principal = principal("alice", "orders:write");
     IdempotencyKey key = new IdempotencyKey("key-1");
@@ -164,6 +165,41 @@ class OrderApplicationServiceTest {
 
     assertThat(replay.order().id()).isEqualTo(first.order().id());
     assertThat(paymentClient.commands()).hasSize(1);
+    assertThat(authorizationClient.relationshipWrites())
+        .containsExactly(
+            new Relationship(GENERATED_ORDER, "owner", SubjectRef.user("alice")),
+            new Relationship(GENERATED_ORDER, "owner", SubjectRef.user("alice")));
+  }
+
+  @Test
+  void idempotent_replay_recovers_missing_order_with_reserved_order_id() {
+    RecordingCartLookup cartLookup = cartLookup();
+    RecordingIdempotencyRepository idempotencyRepository = new RecordingIdempotencyRepository();
+    RecordingAuthorizationClient authorizationClient = authorizationClientWithAliceCartRead();
+    RecordingPaymentClient paymentClient = new RecordingPaymentClient();
+    RecordingOrderRepository orderRepository = new RecordingOrderRepository(List.of());
+    CheckoutCommand command = checkoutCommand();
+    IdempotencyKey key = new IdempotencyKey("key-1");
+    OrderId reservedOrderId = new OrderId("reserved-order");
+    CartSnapshot cart = cartLookup.findCurrentCartForSubject("alice").orElseThrow();
+    idempotencyRepository.claim("alice", key, command.requestFingerprint(cart), reservedOrderId);
+    OrderApplicationService service = service(
+        orderRepository,
+        cartLookup,
+        idempotencyRepository,
+        authorizationClient,
+        paymentClient);
+
+    OrderResult recovered = service.checkout(principal("alice", "orders:write"), command, key);
+
+    assertThat(recovered.order().id()).isEqualTo(reservedOrderId);
+    assertThat(orderRepository.findById(reservedOrderId)).isPresent();
+    assertThat(paymentClient.commands())
+        .extracting(PaymentAuthorizationCommand::orderId)
+        .containsExactly(reservedOrderId);
+    assertThat(authorizationClient.relationshipWrites())
+        .containsExactly(new Relationship(
+            new ResourceRef("order", "reserved-order"), "owner", SubjectRef.user("alice")));
   }
 
   @Test
@@ -392,13 +428,13 @@ class OrderApplicationServiceTest {
     }
 
     @Override
-    public boolean claim(String subject, IdempotencyKey key, String requestFingerprint) {
+    public boolean claim(String subject, IdempotencyKey key, String requestFingerprint, OrderId reservedOrderId) {
       String mapKey = subject + ":" + key.value();
       if (records.containsKey(mapKey)) {
         return false;
       }
       claimCount++;
-      records.put(mapKey, new IdempotencyRecord(subject, key, requestFingerprint, null));
+      records.put(mapKey, new IdempotencyRecord(subject, key, requestFingerprint, reservedOrderId));
       return true;
     }
 
@@ -410,6 +446,9 @@ class OrderApplicationServiceTest {
         throw new IllegalStateException("idempotency record not claimed");
       }
       linkCount++;
+      if (!existing.orderId().equals(orderId)) {
+        throw new IllegalStateException("idempotency record linked to a different order");
+      }
       records.put(mapKey, new IdempotencyRecord(subject, key, existing.requestFingerprint(), orderId));
     }
 
@@ -430,7 +469,7 @@ class OrderApplicationServiceTest {
     }
 
     @Override
-    public boolean claim(String subject, IdempotencyKey key, String requestFingerprint) {
+    public boolean claim(String subject, IdempotencyKey key, String requestFingerprint, OrderId reservedOrderId) {
       throw new IllegalStateException("idempotency unavailable");
     }
 

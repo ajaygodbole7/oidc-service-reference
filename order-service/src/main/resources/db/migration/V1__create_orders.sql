@@ -11,10 +11,12 @@ CREATE TABLE orders (
 
 CREATE TABLE order_lines (
     order_id            VARCHAR(255) NOT NULL REFERENCES orders (id) ON DELETE CASCADE,
+    line_position       INTEGER NOT NULL,
     product_id          VARCHAR(255) NOT NULL,
     quantity            INTEGER NOT NULL,
     unit_price_amount   NUMERIC(12, 2) NOT NULL,
-    unit_price_currency VARCHAR(3) NOT NULL
+    unit_price_currency VARCHAR(3) NOT NULL,
+    PRIMARY KEY (order_id, line_position)
 );
 
 CREATE TABLE order_idempotency (
@@ -22,7 +24,7 @@ CREATE TABLE order_idempotency (
     subject             VARCHAR(255) NOT NULL,
     idempotency_key     VARCHAR(120) NOT NULL,
     request_fingerprint VARCHAR(255) NOT NULL,
-    order_id            VARCHAR(255) REFERENCES orders (id),
+    order_id            VARCHAR(255) NOT NULL,
     UNIQUE (subject, idempotency_key)
 );
 
@@ -49,12 +51,14 @@ INSERT INTO orders (
 
 INSERT INTO order_lines (
     order_id,
+    line_position,
     product_id,
     quantity,
     unit_price_amount,
     unit_price_currency
 ) VALUES (
     'alice-order',
+    0,
     'starter-mug',
     1,
     12.50,

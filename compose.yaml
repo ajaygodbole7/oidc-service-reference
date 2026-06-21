@@ -73,8 +73,9 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-commerce}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-LOCAL_DEV_POSTGRES_PASSWORD__CHANGE_BEFORE_DEPLOY}
       POSTGRES_DB: commerce
+      PGDATA: /var/lib/postgresql/data
     volumes:
-      - postgres-data:/var/lib/postgresql
+      - postgres-data:/var/lib/postgresql/data
       - ./scripts/postgres-init:/docker-entrypoint-initdb.d:ro
     networks:
       - oidc-internal

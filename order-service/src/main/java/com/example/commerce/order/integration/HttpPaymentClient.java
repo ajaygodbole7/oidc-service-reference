@@ -64,7 +64,10 @@ public final class HttpPaymentClient implements PaymentClient {
     } catch (RuntimeException exception) {
       throw new PaymentClientException("payment authorization call failed", exception);
     }
-    if (response == null || response.paymentId() == null || response.paymentId().isBlank()) {
+    if (response == null || !"AUTHORIZED".equals(response.status())) {
+      throw new PaymentClientException("payment authorization was not authorized");
+    }
+    if (response.paymentId() == null || response.paymentId().isBlank()) {
       throw new PaymentClientException("payment authorization returned no payment id");
     }
     return new PaymentAuthorization(response.paymentId());

@@ -15,6 +15,7 @@ import com.example.commerce.security.SubjectRef;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Supplier;
+import org.springframework.dao.DuplicateKeyException;
 
 public final class CartApplicationService {
 
@@ -69,10 +70,18 @@ public final class CartApplicationService {
       CartId cartId = cartIdGenerator.get();
       DecisionTrace provisionTrace = resourceAuthorizer.writeRelationship(
           new Relationship(resource(cartId), "owner", SubjectRef.user(principal.subject())));
-      cart = new Cart(cartId, principal.subject(), List.of());
-      cart.addItem(command.productId(), command.quantity(), command.unitPrice());
-      repository.save(cart);
-      return new CartResult(cart, List.of(scopeTrace, provisionTrace));
+      Cart created = new Cart(cartId, principal.subject(), List.of());
+      created.addItem(command.productId(), command.quantity(), command.unitPrice());
+      try {
+        repository.save(created);
+        return new CartResult(created, List.of(scopeTrace, provisionTrace));
+      } catch (DuplicateKeyException concurrentCreate) {
+        // A concurrent first-add already created this owner's cart; fall through and add to it.
+        // The owner relationship written above for the now-discarded cart id is a documented
+        // cleanup limitation (see docs/production-hardening.md).
+        cart = repository.findByOwnerSub(principal.subject())
+            .orElseThrow(() -> concurrentCreate);
+      }
     }
     DecisionTrace resourceTrace = resourceAuthorizer.requireAllowed(principal, resource(cart.id()), WRITE);
     cart.addItem(command.productId(), command.quantity(), command.unitPrice());

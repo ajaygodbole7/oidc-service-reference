@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -29,6 +30,7 @@ import org.testcontainers.utility.DockerImageName;
  */
 @Testcontainers
 @SpringBootTest
+@Transactional
 class PostgresOrderRepositoryTest {
 
   @Container
@@ -74,6 +76,9 @@ class PostgresOrderRepositoryTest {
 
     Order reloaded = orderRepository.findById(new OrderId("order-1")).orElseThrow();
     assertThat(reloaded.lines()).hasSize(2);
+    assertThat(reloaded.lines())
+        .extracting(line -> line.productId().value())
+        .containsExactly("starter-mug", "travel-bag");
     assertThat(reloaded.total().amount()).isEqualByComparingTo("73.00");
     assertThat(reloaded.paymentAuthorizationId()).isEqualTo("auth-order-1");
   }
@@ -82,13 +87,13 @@ class PostgresOrderRepositoryTest {
   void claimsIdempotencyOnceThenLinksToOrder() {
     IdempotencyKey key = new IdempotencyKey("idem-1");
 
-    assertThat(idempotencyRepository.claim("alice", key, "fingerprint-1")).isTrue();
-    assertThat(idempotencyRepository.claim("alice", key, "fingerprint-1")).isFalse();
-    assertThat(idempotencyRepository.claim("bob", key, "fingerprint-1")).isTrue();
+    assertThat(idempotencyRepository.claim("alice", key, "fingerprint-1", new OrderId("order-idem-1"))).isTrue();
+    assertThat(idempotencyRepository.claim("alice", key, "fingerprint-1", new OrderId("order-idem-1"))).isFalse();
+    assertThat(idempotencyRepository.claim("bob", key, "fingerprint-1", new OrderId("bob-order-idem-1"))).isTrue();
     assertThat(idempotencyRepository.find("alice", key)).get()
         .satisfies(record -> {
           assertThat(record.requestFingerprint()).isEqualTo("fingerprint-1");
-          assertThat(record.orderId()).isNull();
+          assertThat(record.orderId()).isEqualTo(new OrderId("order-idem-1"));
         });
 
     Order order = Order.confirmed(

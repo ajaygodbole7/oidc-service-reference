@@ -87,12 +87,27 @@ public final class OrderApplicationService {
     traces.add(resourceAuthorizer.requireAllowed(principal, cartResource(cart), CART_READ));
 
     String requestFingerprint = command.requestFingerprint(cart);
-    boolean claimed = idempotencyRepository.claim(principal.subject(), idempotencyKey, requestFingerprint);
+    OrderId orderId = orderIdGenerator.get();
+    boolean claimed = idempotencyRepository.claim(
+        principal.subject(), idempotencyKey, requestFingerprint, orderId);
     if (!claimed) {
-      return replayClaimedCheckout(principal.subject(), idempotencyKey, requestFingerprint, traces);
+      IdempotencyRecord existing = existingClaim(principal.subject(), idempotencyKey, requestFingerprint);
+      return orderRepository.findById(existing.orderId())
+          .map(order -> replayCompletedOrder(principal, order, traces))
+          .orElseGet(() -> completeClaimedCheckout(
+              principal, command, idempotencyKey, existing.orderId(), cart, traces));
     }
 
-    OrderId orderId = orderIdGenerator.get();
+    return completeClaimedCheckout(principal, command, idempotencyKey, orderId, cart, traces);
+  }
+
+  private OrderResult completeClaimedCheckout(
+      CommercePrincipal principal,
+      CheckoutCommand command,
+      IdempotencyKey idempotencyKey,
+      OrderId orderId,
+      CartSnapshot cart,
+      List<DecisionTrace> traces) {
     PaymentAuthorization authorization = paymentClient.authorize(new PaymentAuthorizationCommand(
         orderId,
         principal.subject(),
@@ -109,8 +124,7 @@ public final class OrderApplicationService {
         authorization.authorizationId(),
         clock.instant());
     Order saved = checkoutPersistence.persistAndLink(principal.subject(), idempotencyKey, order);
-    traces.add(resourceAuthorizer.writeRelationship(
-        new Relationship(orderResource(orderId), "owner", SubjectRef.user(principal.subject()))));
+    ensureOrderOwner(principal, orderId, traces);
     return new OrderResult(saved, List.copyOf(traces));
   }
 
@@ -140,19 +154,24 @@ public final class OrderApplicationService {
     return new ResourceRef("order", orderId.value());
   }
 
-  private OrderResult replayClaimedCheckout(
-      String subject, IdempotencyKey idempotencyKey, String requestFingerprint, List<DecisionTrace> traces) {
+  private IdempotencyRecord existingClaim(
+      String subject, IdempotencyKey idempotencyKey, String requestFingerprint) {
     IdempotencyRecord existing = idempotencyRepository.find(subject, idempotencyKey)
         .orElseThrow(() -> new IllegalStateException("idempotency claim disappeared"));
     if (!existing.requestFingerprint().equals(requestFingerprint)) {
       throw new IdempotencyConflictException("idempotency key was already used for a different request");
     }
-    OrderId linkedOrderId = existing.orderId();
-    if (linkedOrderId == null) {
-      throw new IdempotencyConflictException("idempotency key is already processing");
-    }
-    Order existingOrder = orderRepository.findById(linkedOrderId)
-        .orElseThrow(() -> new OrderNotFoundException("idempotent order not found: " + linkedOrderId.value()));
+    return existing;
+  }
+
+  private OrderResult replayCompletedOrder(
+      CommercePrincipal principal, Order existingOrder, List<DecisionTrace> traces) {
+    ensureOrderOwner(principal, existingOrder.id(), traces);
     return new OrderResult(existingOrder, List.copyOf(traces));
+  }
+
+  private void ensureOrderOwner(CommercePrincipal principal, OrderId orderId, List<DecisionTrace> traces) {
+    traces.add(resourceAuthorizer.writeRelationship(
+        new Relationship(orderResource(orderId), "owner", SubjectRef.user(principal.subject()))));
   }
 }

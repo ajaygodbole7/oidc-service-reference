@@ -8,6 +8,7 @@ import java.security.MessageDigest;
 import java.time.Clock;
 import java.util.HexFormat;
 import java.util.UUID;
+import org.springframework.dao.DuplicateKeyException;
 
 public final class PaymentApplicationService {
 
@@ -64,7 +65,13 @@ public final class PaymentApplicationService {
         idempotencyKey,
         commandFingerprint,
         clock.instant());
-    return repository.save(authorization);
+    try {
+      return repository.save(authorization);
+    } catch (DuplicateKeyException exception) {
+      return repository.findByIdempotencyKey(idempotencyKey)
+          .map(existing -> replayOrReject(existing, commandFingerprint))
+          .orElseThrow(() -> exception);
+    }
   }
 
   private static String fingerprint(AuthorizePaymentCommand command) {

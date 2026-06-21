@@ -129,6 +129,16 @@ Where it plugs in: the Postgres layer in [architecture.md](architecture.md). The
 interfaces and Flyway migrations stay; HA topology, pooling, backup, and migration operations
 sit underneath them and do not touch the four gates or the ownership-column rule.
 
+Two concurrency notes specific to this reference, both single-node-safe today but worth
+hardening. Concurrent writes to the same aggregate (for example two `cancelOrder` calls, or two
+updates of one cart) are last-writer-wins; a production deployment adds an optimistic-lock version
+column so a lost update is detected rather than silently dropped. Separately, the SpiceDB owner
+relationship for a new cart or order is written just before the row is persisted; on a concurrent
+create-on-first-add race the request recovers by re-resolving to the winning row, but the owner
+tuple for the discarded id is left behind. It is harmless (no aggregate references it), and a
+production deployment adds a periodic relationship-reconciliation job to remove tuples with no
+backing row.
+
 ## Observability / SIEM
 
 Today the Security Trace records per-request gate evidence (browser token absent, resolved

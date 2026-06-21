@@ -18,12 +18,12 @@ public final class InMemoryIdempotencyRepository implements IdempotencyRepositor
   }
 
   @Override
-  public boolean claim(String subject, IdempotencyKey key, String requestFingerprint) {
+  public boolean claim(String subject, IdempotencyKey key, String requestFingerprint, OrderId reservedOrderId) {
     Key mapKey = new Key(subject, key.value());
     if (records.containsKey(mapKey)) {
       return false;
     }
-    records.put(mapKey, new IdempotencyRecord(subject, key, requestFingerprint, null));
+    records.put(mapKey, new IdempotencyRecord(subject, key, requestFingerprint, reservedOrderId));
     return true;
   }
 
@@ -33,6 +33,9 @@ public final class InMemoryIdempotencyRepository implements IdempotencyRepositor
     IdempotencyRecord existing = records.get(mapKey);
     if (existing == null) {
       throw new IllegalStateException("idempotency record not claimed");
+    }
+    if (!existing.orderId().equals(orderId)) {
+      throw new IllegalStateException("idempotency record linked to a different order");
     }
     records.put(mapKey, new IdempotencyRecord(subject, key, existing.requestFingerprint(), orderId));
   }
