@@ -66,12 +66,15 @@ complementing the heavier vitest in `verify-frontend.sh`. It is source-based on 
 (Java-version-proof; ArchUnit/ASM lags this
 repo's JDK class-file version and fights the enforcer's dependencyConvergence). The
 platform-verification ladder (orchestrator, SpiceDB outage, trace evidence, architecture
-gates) is complete. The final slice, documentation, is in progress: `README.md` and the core
-security trio (`docs/architecture.md`, `docs/authorization-model.md`, `docs/token-model.md`) are
-written, as are the builder docs (`docs/domain-modeling.md`, `docs/security-behind-the-scenes.md`).
-The operator docs (`docs/business-flows.md`, `docs/security-verification.md`) are also written.
-Remaining: `docs/threat-model.md` and `docs/production-hardening.md`. (`scripts/up.sh` also references a `SECURITY.md` that does not
-exist — create it or drop the reference.)
+gates) is complete. The final slice, documentation, is COMPLETE: `README.md`, a `docs/` set of
+nine (architecture, authorization-model, token-model, domain-modeling, security-behind-the-scenes,
+business-flows, security-verification, threat-model, production-hardening), and `SECURITY.md`
+(which resolves the previously dangling `scripts/up.sh` reference). All are doc/code-synced and
+clean (zero em-dashes, no marketing/slop), checked by a consolidated grep gate.
+
+All seven items in PLAN's build order are now done; the reference is feature-complete. The only
+remaining step is a final full acceptance run on a clean stack when wanted: `scripts/verify-all.sh`
+(static) plus `scripts/verify-frontend.sh` and `scripts/verify-live-all.sh` (live).
 
 The live SEC harnesses are collapsed into one orchestrated command,
 `scripts/verify-live-all.sh` (the live counterpart to the static `verify-all.sh`): it brings
@@ -880,3 +883,15 @@ Append-only, timestamped chronology (newest at the bottom); captures non-commit 
   `docs/security-verification.md` (the four verify gates, the checked-in SEC-* catalogs, the
   ARCH-* checks, and evidence discipline). Doc/code-synced. Remaining docs: threat-model,
   production-hardening.
+- 2026-06-21 — Claude — completed the documentation slice using two parallel sub-agents (one per
+  remaining doc) with orchestrator review. The sub-agents wrote `docs/threat-model.md` (a threat,
+  control, proof table) and `docs/production-hardening.md` (all ten PLAN documents-not-builds
+  items). Orchestrator review caught and fixed: `---` separators in threat-model (the other docs
+  use none); a `frontend` listed as a Compose service in production-hardening (it runs via the Vite
+  dev server, not Compose); and 19 em-dashes I had introduced as list separators in
+  README/SECURITY/token-model (replaced with colons to match the existing doc convention). Verified
+  the `id_token_hint` logout claim and the `typ` (`JWT`/`at+JWT`) validator claim against source
+  before keeping them. Also wrote `SECURITY.md` (resolving the up.sh dangling reference) and added
+  the README documentation map. Consolidated grep gate over the docs: zero em-dashes, zero stray
+  separators, no slop words, all intra-doc links resolve. Documentation slice and PLAN build order
+  complete.

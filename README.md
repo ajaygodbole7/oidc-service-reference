@@ -113,6 +113,15 @@ per-service Postgres databases. Production concerns (mTLS/SPIFFE, service mesh, 
 exchange, multi-region, observability, supply-chain pinning) are documented as hardening
 guidance, not built into the default.
 
-Deeper documentation is being written under `docs/`: architecture, business flows, token model,
-authorization model, domain modeling, security behind the scenes, security verification, threat
-model, and production hardening.
+## Documentation
+
+- [docs/architecture.md](docs/architecture.md): components, request path, trust boundaries.
+- [docs/authorization-model.md](docs/authorization-model.md): the four-gate ladder and the SpiceDB schema.
+- [docs/token-model.md](docs/token-model.md): user and service tokens, the browser token boundary.
+- [docs/domain-modeling.md](docs/domain-modeling.md): the service layering and dependency rules.
+- [docs/security-behind-the-scenes.md](docs/security-behind-the-scenes.md): what you write vs what the platform does.
+- [docs/business-flows.md](docs/business-flows.md): browse, cart, checkout, order.
+- [docs/security-verification.md](docs/security-verification.md): the verify gates and the SEC/ARCH catalog.
+- [docs/threat-model.md](docs/threat-model.md): threats and the controls that stop them.
+- [docs/production-hardening.md](docs/production-hardening.md): what a real deployment adds.
+- [SECURITY.md](SECURITY.md): local security posture and the secret-sentinel boot check.

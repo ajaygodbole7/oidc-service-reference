@@ -18,8 +18,8 @@ echoes it in the `X-XSRF-TOKEN` header on unsafe methods, and the gateway valida
 For `/api/**`, the gateway resolves the session and injects the user's access token as a bearer.
 The token is issued by Keycloak (the `commerce-auth` client) and carries:
 
-- `aud=commerce-api` — gate 2 rejects any other audience.
-- scopes such as `cart:read`, `cart:write`, `catalog:write`, `orders:read`, `orders:write` —
+- `aud=commerce-api`: gate 2 rejects any other audience.
+- scopes such as `cart:read`, `cart:write`, `catalog:write`, `orders:read`, `orders:write`:
   gate 3 checks these.
 
 This is the phantom-token pattern: an opaque session at the edge, a real JWT inside, injected by
@@ -30,8 +30,8 @@ the gateway after the browser is out of the path.
 Checkout requires a server-to-server call. Order Service requests a client-credentials token
 from Keycloak as `client_id=order-service` and calls Payment Service with it. The token carries:
 
-- `aud=payment-service` — Payment rejects any token not minted for it.
-- `azp`/`client_id=order-service` — Payment can attribute the call to Order Service.
+- `aud=payment-service`: Payment rejects any token not minted for it.
+- `azp`/`client_id=order-service`: Payment can attribute the call to Order Service.
 - scope `payments:authorize`.
 
 Payment Service validates the audience and rejects a user (`commerce-api`) token outright
@@ -55,6 +55,6 @@ The invariant the live suite holds:
 ## Validation, not delegation
 
 Both the user-token gate and the payment service-token check use focused Nimbus validators with
-explicit issuer, audience, and expiry checks, rather than a framework resource-server default.
-The accepted audience is asserted in code, so a dependency bump cannot silently relax it to
-accept the wrong token.
+explicit issuer, audience, expiry, and JWS type (`JWT` or `at+JWT`, per RFC 9068) checks, rather
+than a framework resource-server default. The accepted audience and token type are asserted in
+code, so a dependency bump cannot silently relax them to accept the wrong token.
