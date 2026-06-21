@@ -43,6 +43,7 @@ known_case() {
     SEC-NO-RESOURCE-HIJACK|\
     SEC-PROVISIONING-FAILS-CLOSED|\
     SEC-NON-COMMERCE-AUD|\
+    SEC-SECURITY-TRACE-EVIDENCE|\
     SEC-SPICEDB-UNAVAILABLE)
       return 0
       ;;
@@ -196,6 +197,12 @@ if should_run SEC-BROWSER-AUTHORIZATION-OVERWRITTEN; then
   restore_default_auth
   enable_cart_fixtures
   run_case SEC-BROWSER-AUTHORIZATION-OVERWRITTEN 1
+fi
+
+if should_run SEC-SECURITY-TRACE-EVIDENCE; then
+  restore_default_auth
+  enable_cart_fixtures
+  run_case SEC-SECURITY-TRACE-EVIDENCE 1
 fi
 
 if should_run SEC-RELATIONSHIP-REMOVAL-IMMEDIATE; then

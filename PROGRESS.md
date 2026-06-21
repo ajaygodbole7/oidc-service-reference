@@ -23,9 +23,11 @@ Every session must leave these sections populated:
 ## Current slice
 
 Complete platform verification — IN PROGRESS. The one-command live orchestrator exists and
-is green, and `SEC-SPICEDB-UNAVAILABLE` is now accepted as a live cart gate: watched runs
-proved cart reads and writes fail closed while SpiceDB is stopped, then the harness restores
-SpiceDB schema/seed and later catalog/order-payment gates still pass.
+is green. `SEC-SPICEDB-UNAVAILABLE` is accepted as a live cart gate, and
+`SEC-SECURITY-TRACE-EVIDENCE` is now accepted as harness-only Security Trace evidence:
+watched runs proved APISIX propagates a bounded `X-Trace-Id`, the local cart fixture
+evidence stays behind the `test-fixture` profile, and the evidence shows gateway
+session/JWT proof plus separate scope and SpiceDB resource traces without token material.
 
 Postgres persistence — ACCEPTED 2026-06-20 13:50 PDT. Catalog, cart, order, and payment
 now use local Postgres with Flyway migrations and Spring Data JDBC repositories. Order
@@ -55,15 +57,16 @@ writes succeed only through `catalog:write` plus SpiceDB `store:main#manage`.
 ## Exact next action
 
 Pick the next platform-verification sub-slice from `PLAN.md`. Recommended next loop:
-Security Trace evidence, because several SEC cases already assert behavior but only fixture
-evidence currently exposes bounded traces. Keep it harness/internal; do not build a
-diagnostics console or user-facing security UI.
+architecture gates for controller/service/domain/persistence/security boundaries, because
+cart/catalog/order/payment behavior is live-green and the remaining platform-verification
+work should now tighten structure rather than add product features. Keep any trace work
+harness/internal; do not build a diagnostics console or user-facing security UI.
 
 The live SEC harnesses are collapsed into one orchestrated command,
 `scripts/verify-live-all.sh` (the live counterpart to the static `verify-all.sh`): it brings
 the stack up once and runs the cart, catalog, and order/payment live gates with each harness's
-SKIP_UP flag. It is green end-to-end against the Postgres-backed stack with the new
-`SEC-SPICEDB-UNAVAILABLE` cart gate included.
+SKIP_UP flag. It is green end-to-end against the Postgres-backed stack with both
+`SEC-SPICEDB-UNAVAILABLE` and `SEC-SECURITY-TRACE-EVIDENCE` included.
 
 Fresh agents should start with:
 
@@ -88,10 +91,14 @@ add CI/CD; this repo remains local-first.
 
 The current platform-verification sub-slice is accepted because these gates passed in
 watched runs:
+- `SEC-SECURITY-TRACE-EVIDENCE` proves bounded harness-only cart trace evidence for the
+  four-gate ladder: trace ID, gateway session/JWT proof, scope trace, and SpiceDB resource
+  trace.
 - `SEC-SPICEDB-UNAVAILABLE` stops SpiceDB, then proves cart reads and writes fail closed.
 - The harness restarts SpiceDB and restores schema/seed relationships after the outage case.
-- `LIVE_ALL_SKIP_UP=1 sh scripts/verify-live-all.sh` passes afterward, proving catalog and
-  order/payment live gates still compose after the stop/restart.
+- `LIVE_ALL_SKIP_UP=1 sh scripts/verify-live-all.sh` passes afterward, proving cart,
+  catalog, and order/payment live gates still compose after the new trace evidence and
+  SpiceDB stop/restart cases.
 - Harness output remains bounded: stable IDs and pass/fail only, no tokens, cookies, or
   secrets.
 
@@ -135,10 +142,31 @@ watched runs:
 - [ ] Complete platform verification: SpiceDB-unavailable fail-closed, full
       security-verification suite, Security Trace evidence, stable harness check catalog,
       architecture checks, bounded/masked evidence, service-health summaries, and final
-      docs. (`SEC-SPICEDB-UNAVAILABLE` accepted 2026-06-20 19:44 PDT; full platform
+      docs. (`SEC-SPICEDB-UNAVAILABLE` accepted 2026-06-20 19:44 PDT;
+      `SEC-SECURITY-TRACE-EVIDENCE` accepted 2026-06-20 20:01 PDT; full platform
       verification remains open.)
 
 ## Verifier status
+
+Platform verification sub-slice accepted 2026-06-20 20:01 PDT:
+
+```sh
+sh -n tests/security/verify-cart-security-live.sh && sh -n scripts/verify-all.sh
+cd frontend && corepack pnpm exec playwright test tests/e2e/cart-live.spec.ts --grep SEC-SECURITY-TRACE-EVIDENCE --list
+sh scripts/verify-cart-service.sh
+cd frontend && corepack pnpm run typecheck
+sh api-gateway/tests/test-lua-unit.sh
+sh tests/security/verify-cart-security-live.sh SEC-SECURITY-TRACE-EVIDENCE
+LIVE_ALL_SKIP_UP=1 sh scripts/verify-live-all.sh
+```
+
+Result: PASS. The live cart gate proved bounded `X-Trace-Id` propagation through APISIX,
+read-only fixture evidence under `test-fixture`, gateway-injected bearer fingerprint
+evidence, stripped unsafe identity headers, and separate `scope` plus `resource`
+`DecisionTrace` entries for `cart:read` on `cart:alice-cart`. JSON evidence was asserted
+to contain no token material. The full live orchestrator also passed afterward: all cart
+live cases, catalog anonymous-read/merchant-write cases, and order/payment S2S/idempotency
+cases were green with the new trace case included.
 
 Platform verification sub-slice accepted 2026-06-20 19:44 PDT:
 
@@ -495,8 +523,9 @@ verification.
 
 ## Blockers
 
-- Host disk tight: `/System/Volumes/Data` at about 4.1 GiB free / 99% used during the
-  2026-06-20 `SEC-SPICEDB-UNAVAILABLE` verification after repulling/rebuilding the stack.
+- Host disk tight but currently recovered: after the 2026-06-20 full live trace run,
+  `sh scripts/down.sh`, `docker builder prune -af`, and `docker image prune -af` left
+  Docker with 0B images/containers/cache and `/System/Volumes/Data` at about 9.0 GiB free.
   Do not run full-stack rebuilds casually; check disk first, prefer skip-up/no-build modes,
   and prune after live gates.
 - Local shell has Node 24.12.0; `frontend/package.json` pins Node 26.3.0, so pnpm emits
@@ -513,11 +542,11 @@ verification.
 The scaffold, authorization-substrate, cart vertical slice, dynamic cart ownership
 provisioning, catalog vertical slice, order/payment vertical slice, and Postgres persistence
 slice are accepted locally. Platform verification is in progress; `SEC-SPICEDB-UNAVAILABLE`
-is accepted and included in `verify-live-all.sh`. The stack was left running for
-verification and should be torn down/pruned after commit if no immediate follow-up needs it.
-Next recommended loop is harness/internal Security Trace evidence, not another persistence
-migration and not a diagnostics console. Keep the four gates visible in code and traces;
-Postgres owner columns are not authorization.
+and `SEC-SECURITY-TRACE-EVIDENCE` are accepted and included in `verify-live-all.sh`. The
+stack has been torn down and Docker images/build cache pruned after the accepted run. Next
+recommended loop is architecture gates for controller/service/domain/persistence/security
+boundaries, not another persistence migration and not a diagnostics console. Keep the four
+gates visible in code and traces; Postgres owner columns are not authorization.
 
 ## Session log
 
@@ -777,3 +806,21 @@ Append-only, timestamped chronology (newest at the bottom); captures non-commit 
   SEC-SPICEDB-UNAVAILABLE`, and `LIVE_ALL_SKIP_UP=1 sh scripts/verify-live-all.sh` after the
   stack was up. The full live run passed cart, catalog, and order/payment gates with the new
   outage proof included.
+- 2026-06-20 20:01 PDT — Codex — moved the next platform-verification loop into harness-only
+  Security Trace evidence. Added APISIX `X-Trace-Id` propagation with bounded trace-id
+  validation, extended the cart `test-fixture` evidence endpoint to run the real current-cart
+  application-service read path and return bounded `DecisionTrace` evidence, and added
+  `SEC-SECURITY-TRACE-EVIDENCE` to the Playwright cart live suite, cart harness known-case
+  list, stable case catalog, `verify-all.sh` pending catalog, and PLAN acceptance text.
+  Verified green: shell syntax, one-test Playwright listing, `sh scripts/verify-cart-service.sh`,
+  frontend typecheck, `sh api-gateway/tests/test-lua-unit.sh`, and
+  `sh tests/security/verify-cart-security-live.sh SEC-SECURITY-TRACE-EVIDENCE`. The live gate
+  proved bounded trace ID, gateway session/JWT proof, stripped unsafe headers, masked token
+  fingerprint, and separate scope/resource traces with no token material.
+- 2026-06-20 20:11 PDT — Codex — reran the full live acceptance orchestrator against the
+  already-running Postgres-backed stack after adding `SEC-SECURITY-TRACE-EVIDENCE`. Watched
+  `LIVE_ALL_SKIP_UP=1 sh scripts/verify-live-all.sh` green: cart passed all live SEC cases
+  including trace evidence and SpiceDB outage, catalog passed anonymous-read/merchant-write
+  gates, and order/payment passed payment route/client/audience plus checkout idempotency
+  gates. Disk warned at ~4 GiB free during the run; then the stack was torn down and Docker
+  images/build cache were pruned back to 0B, leaving host disk at about 9.0 GiB free.

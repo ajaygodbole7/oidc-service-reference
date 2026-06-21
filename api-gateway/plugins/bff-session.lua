@@ -38,6 +38,7 @@ local ngx         = ngx
 local ngx_time    = ngx.time
 local ngx_var     = ngx.var
 local str_byte    = string.byte
+local str_match   = string.match
 local str_len     = string.len
 local str_sub     = string.sub
 local str_find    = string.find
@@ -242,6 +243,23 @@ local function problem_json(status, title, detail)
     status = status,
     detail = detail,
   })
+end
+
+local function valid_trace_id(value)
+  return type(value) == "string"
+      and str_len(value) > 0
+      and str_len(value) <= 128
+      and str_match(value, "^[%w][%w_:%-]*$") ~= nil
+end
+
+local function trace_id_or_new(inbound, request_id)
+  if valid_trace_id(inbound) then
+    return inbound
+  end
+  if valid_trace_id(request_id) then
+    return "trace-" .. request_id
+  end
+  return "trace-" .. tostring(ngx_time()) .. "-" .. tostring(math.random(100000, 999999))
 end
 
 -- Pure: the Set-Cookie string that evicts the session cookie. Name/Secure key on
@@ -716,6 +734,7 @@ _M._get_session_cookie = get_session_cookie
 -- HTTP e2e never reaches, and the SameSite parity with the login cookies.
 _M._build_rotation_cookies = build_rotation_cookies
 _M._expire_session_cookie_header = expire_session_cookie_header
+_M._trace_id_or_new = trace_id_or_new
 
 -- ---------------------------------------------------------------------
 -- Plugin lifecycle
@@ -760,6 +779,11 @@ function _M.access(conf, ctx)
   local scheme = effective_scheme(ctx)
   local host   = ngx_var.host or ""
   local uri    = ngx_var.request_uri or "/"   -- full path + query
+  local trace_id = trace_id_or_new(core.request.header(ctx, "X-Trace-Id"), ngx_var.request_id)
+
+  ctx.security_trace_id = trace_id
+  core.request.set_header(ctx, "X-Trace-Id", trace_id)
+  core.response.set_header("X-Trace-Id", trace_id)
 
   local cookie_header = core.request.header(ctx, "Cookie")
   local cookies       = parse_cookies(cookie_header)
@@ -826,6 +850,7 @@ function _M.access(conf, ctx)
     -- Strip client-supplied identity headers before proxying (defense in depth).
     core.request.set_header(ctx, header_name, nil)
   end
+  core.request.set_header(ctx, "X-Trace-Id", trace_id)
   core.request.set_header(ctx, "Authorization", "Bearer " .. access_token)
 
   -- Defense in depth: also stash a marker so the header_filter phase
@@ -858,6 +883,9 @@ function _M.header_filter(conf, ctx)
     if not ngx.header["Cache-Control"] then
       ngx.header["Cache-Control"] = "no-store"
     end
+  end
+  if ctx.security_trace_id then
+    ngx.header["X-Trace-Id"] = ctx.security_trace_id
   end
 
   -- A6: the resolve rotated the sid. Re-issue BOTH session cookies with the new

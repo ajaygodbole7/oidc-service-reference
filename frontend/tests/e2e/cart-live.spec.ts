@@ -19,10 +19,22 @@ type FetchResult = {
 };
 
 type FixtureEvidence = {
+  readonly traceId: string;
+  readonly request: string;
   readonly subject: string;
   readonly tokenFingerprint: string;
   readonly authorizationBearerPresent: boolean;
   readonly unsafeIdentityHeaderPresent: boolean;
+  readonly sessionResolved: boolean;
+  readonly serviceJwtValidated: boolean;
+  readonly serviceTraces: readonly DecisionTrace[];
+};
+
+type DecisionTrace = {
+  readonly gate: string;
+  readonly allowed: boolean;
+  readonly reason: string;
+  readonly evidence: Record<string, string>;
 };
 
 const TOKEN_MATERIAL_RE =
@@ -288,6 +300,50 @@ test("SEC-BROWSER-AUTHORIZATION-OVERWRITTEN: gateway overwrites browser bearer",
   expect(malicious.authorizationBearerPresent).toBe(true);
   expect(malicious.unsafeIdentityHeaderPresent).toBe(false);
   expect(malicious.tokenFingerprint).toBe(baseline.tokenFingerprint);
+});
+
+test("SEC-SECURITY-TRACE-EVIDENCE: bounded evidence shows the four cart gates", async ({
+  page
+}) => {
+  test.skip(process.env.CART_SECURITY_FIXTURES !== "1", "requires local test-fixture profile");
+
+  await loginAsAlice(page);
+
+  const evidence = await fixtureEvidence(page, {
+    "X-Trace-Id": "cart-trace-live-1",
+    "X-User": "admin",
+    Authorization: "Bearer attacker.supplied.token"
+  });
+  const serialized = JSON.stringify(evidence);
+  const scopeTrace = evidence.serviceTraces.find((trace) => trace.gate === "scope");
+  const resourceTrace = evidence.serviceTraces.find((trace) => trace.gate === "resource");
+
+  expect(evidence.traceId).toBe("cart-trace-live-1");
+  expect(evidence.request).toBe("GET /api/_test/cart/evidence");
+  expect(evidence.sessionResolved).toBe(true);
+  expect(evidence.serviceJwtValidated).toBe(true);
+  expect(evidence.subject).toBe("alice");
+  expect(evidence.authorizationBearerPresent).toBe(true);
+  expect(evidence.unsafeIdentityHeaderPresent).toBe(false);
+  expect(evidence.tokenFingerprint).toMatch(/^[a-f0-9]{16}$/);
+  expect(scopeTrace).toMatchObject({
+    allowed: true,
+    reason: "scope_present",
+    evidence: expect.objectContaining({
+      scope: "cart:read",
+      subject: "alice"
+    })
+  });
+  expect(resourceTrace).toMatchObject({
+    allowed: true,
+    reason: "relationship_found",
+    evidence: expect.objectContaining({
+      subject: "user:alice",
+      resource: "cart:alice-cart",
+      permission: "read"
+    })
+  });
+  expect(serialized).not.toMatch(TOKEN_MATERIAL_RE);
 });
 
 test("SEC-RELATIONSHIP-REMOVAL-IMMEDIATE: removed SpiceDB owner relationship denies next cart read", async ({

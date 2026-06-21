@@ -1,6 +1,9 @@
 package com.example.commerce.cart.testfixture;
 
+import com.example.commerce.cart.service.CartApplicationService;
+import com.example.commerce.cart.service.CartResult;
 import com.example.commerce.security.CommercePrincipal;
+import com.example.commerce.security.DecisionTrace;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import org.springframework.context.annotation.Profile;
@@ -37,9 +40,11 @@ class CartTestFixtureController {
       "x-id-token");
 
   private final CartRelationshipFixture fixture;
+  private final CartApplicationService cartService;
 
-  CartTestFixtureController(CartRelationshipFixture fixture) {
+  CartTestFixtureController(CartRelationshipFixture fixture, CartApplicationService cartService) {
     this.fixture = fixture;
+    this.cartService = cartService;
   }
 
   @PostMapping("/api/_test/cart/relationships/local-seed")
@@ -56,11 +61,18 @@ class CartTestFixtureController {
     boolean unsafeHeaderPresent = UNSAFE_IDENTITY_HEADERS.stream()
         .anyMatch(header -> request.getHeader(header) != null);
     String authorization = request.getHeader("Authorization");
+    String traceId = request.getHeader("X-Trace-Id");
+    CartResult cart = cartService.getCurrentCart(principal);
     return new FixtureEvidence(
+        traceId == null || traceId.isBlank() ? "missing-trace-id" : traceId,
+        request.getMethod() + " " + request.getRequestURI(),
         principal.subject(),
         principal.tokenFingerprint(),
         authorization != null && authorization.startsWith("Bearer "),
-        unsafeHeaderPresent);
+        unsafeHeaderPresent,
+        true,
+        true,
+        cart.traces());
   }
 
   @PostMapping("/api/_test/cart/relationships/alice-cart-owner")
@@ -80,9 +92,14 @@ class CartTestFixtureController {
   }
 
   record FixtureEvidence(
+      String traceId,
+      String request,
       String subject,
       String tokenFingerprint,
       boolean authorizationBearerPresent,
-      boolean unsafeIdentityHeaderPresent) {
+      boolean unsafeIdentityHeaderPresent,
+      boolean sessionResolved,
+      boolean serviceJwtValidated,
+      List<DecisionTrace> serviceTraces) {
   }
 }

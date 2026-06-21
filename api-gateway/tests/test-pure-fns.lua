@@ -132,6 +132,20 @@ checkc("evict bare clears bare sid", has(esc("sid"), "sid=") and not has(esc("si
 checkc("evict bare Max-Age=0", has(esc("sid"), "; Max-Age=0"))
 checkc("evict bare no Secure", not has(esc("sid"), "Secure"))
 
+-- Security Trace IDs: forward bounded caller IDs only when they are safe
+-- correlation handles; otherwise generate from nginx's request_id. Dots and
+-- spaces are intentionally rejected so token-shaped values are never reflected
+-- as trace identifiers.
+local tid = plugin._trace_id_or_new
+assert(type(tid) == "function",
+    "bff-session.lua must export _trace_id_or_new for tests")
+check("trace forwards bounded inbound id", tid("cart-trace_123:abc", "req-1"), "cart-trace_123:abc")
+check("trace rejects spaces", tid("bad trace", "req-2"), "trace-req-2")
+check("trace rejects token-shaped dots", tid("aaa.bbb.ccc", "req-3"), "trace-req-3")
+check("trace rejects overlong inbound", tid(string.rep("a", 129), "req-4"), "trace-req-4")
+check("trace generates fallback without request_id",
+    string.match(tid(nil, nil), "^trace%-%d+%-%d+$") ~= nil, true)
+
 if failures > 0 then
   io.stderr:write(string.format("test-pure-fns: %d FAIL\n", failures))
   os.exit(1)

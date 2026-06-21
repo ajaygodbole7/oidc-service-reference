@@ -126,6 +126,7 @@ pending SEC-NO-RESOURCE-HIJACK "run sh tests/security/verify-cart-security-live.
 pending SEC-PROVISIONING-FAILS-CLOSED "run sh tests/security/verify-cart-security-live.sh SEC-PROVISIONING-FAILS-CLOSED for relationship-write failure proof"
 pending SEC-SPOOFED-IDENTITY-HEADERS "run sh tests/security/verify-cart-security-live.sh SEC-SPOOFED-IDENTITY-HEADERS for the APISIX stripped-header proof"
 pending SEC-BROWSER-AUTHORIZATION-OVERWRITTEN "run sh tests/security/verify-cart-security-live.sh SEC-BROWSER-AUTHORIZATION-OVERWRITTEN for the gateway bearer overwrite proof"
+pending SEC-SECURITY-TRACE-EVIDENCE "run sh tests/security/verify-cart-security-live.sh SEC-SECURITY-TRACE-EVIDENCE for bounded harness-only four-gate trace evidence"
 pending SEC-PAYMENT-NO-BROWSER-ROUTE "run sh tests/security/verify-order-payment-security-live.sh SEC-PAYMENT-NO-BROWSER-ROUTE for the browser gateway proof"
 pending SEC-PAYMENT-WRONG-CLIENT "run sh tests/security/verify-order-payment-security-live.sh SEC-PAYMENT-WRONG-CLIENT for the payment S2S caller proof"
 pending SEC-PAYMENT-REJECTS-USER-TOKEN "run sh tests/security/verify-order-payment-security-live.sh SEC-PAYMENT-REJECTS-USER-TOKEN for the payment audience proof"
