@@ -56,11 +56,15 @@ writes succeed only through `catalog:write` plus SpiceDB `store:main#manage`.
 
 ## Exact next action
 
-Pick the next platform-verification sub-slice from `PLAN.md`. Recommended next loop:
-architecture gates for controller/service/domain/persistence/security boundaries, because
-cart/catalog/order/payment behavior is live-green and the remaining platform-verification
-work should now tighten structure rather than add product features. Keep any trace work
-harness/internal; do not build a diagnostics console or user-facing security UI.
+Architecture gates are now in place: `scripts/verify-architecture.sh` (wired into
+`verify-all.sh`) enforces the layering invariants by source-import inspection — domain purity,
+web never importing persistence, and the gate authorizers (ScopeAuthorizer/ResourceAuthorizer)
+used only at the service boundary, plus a positive check that cart/catalog/order actually
+invoke both gates. It is source-based on purpose (Java-version-proof; ArchUnit/ASM lags this
+repo's JDK class-file version and fights the enforcer's dependencyConvergence). The
+platform-verification ladder (orchestrator, SpiceDB outage, trace evidence, architecture
+gates) is now substantially complete; pick the next slice from `PLAN.md` and confirm direction
+with the human before adding product/app surface.
 
 The live SEC harnesses are collapsed into one orchestrated command,
 `scripts/verify-live-all.sh` (the live counterpart to the static `verify-all.sh`): it brings
@@ -824,3 +828,17 @@ Append-only, timestamped chronology (newest at the bottom); captures non-commit 
   gates, and order/payment passed payment route/client/audience plus checkout idempotency
   gates. Disk warned at ~4 GiB free during the run; then the stack was torn down and Docker
   images/build cache were pruned back to 0B, leaving host disk at about 9.0 GiB free.
+- 2026-06-20 16:10 PDT — Claude — reviewed Codex's `62bd8b3` (SpiceDB outage) and `ec9664f`
+  (trace evidence) as sound (test-fixture-only evidence endpoint, no token leak, bounded
+  `X-Trace-Id`, gate-message wording matches `ResourceAuthorizer`) and pushed both to origin.
+  Then added `scripts/verify-architecture.sh`, a source-import architecture boundary gate wired
+  into `verify-all.sh`. It enforces, per backend service: domain purity (no framework/other-layer
+  imports), web never importing persistence, and the gate authorizers used only at the service
+  boundary (service + config), with a positive check that cart/catalog/order invoke both
+  ScopeAuthorizer and ResourceAuthorizer (payment is S2S, excluded). Chose source-import over
+  ArchUnit deliberately: the build JDK is Java 25 and ASM/ArchUnit lag new class-file versions,
+  and the strict enforcer fights ArchUnit's transitive deps — grep-over-imports is
+  Java-version-proof and dependency-free. Verified: passes clean; teeth proven both ways (a
+  domain `org.springframework` import fails `ARCH-DOMAIN-PURE-cart`; removing a service's
+  `ScopeAuthorizer` import fails `ARCH-GATE-SCOPE-PRESENT-cart`), both reverted. Static-only,
+  no Docker.

@@ -74,6 +74,7 @@ check_absent_in HARNESS-NO-NPM-RANGES '"[~^*]' \
   "frontend package versions must be exact, not ranges" \
   frontend/package.json
 
+sh scripts/verify-architecture.sh
 sh scripts/verify-commerce-security-common.sh
 sh scripts/verify-spicedb-static.sh
 SMOKE_SKIP_DISCOVERY=1 sh authorization-server/tests/smoke.sh
