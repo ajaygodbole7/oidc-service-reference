@@ -49,11 +49,14 @@ writes succeed only through `catalog:write` plus SpiceDB `store:main#manage`.
 
 ## Exact next action
 
-Choose the next platform-verification slice from `PLAN.md` before adding more app surface.
-The best next step is to collapse the now-proven live SEC harnesses into a single
-orchestrated local acceptance command or update `verify-all.sh` so it can optionally run the
-live suite after the stack is healthy. Keep Docker rebuilds controlled: the host was at about
-`3.5 GiB` free after this slice, and `scripts/up.sh` still rebuilds images by default.
+The live SEC harnesses are now collapsed into one orchestrated command,
+`scripts/verify-live-all.sh` (the live counterpart to the static `verify-all.sh`): it brings
+the stack up once and runs the cart, catalog, and order/payment live gates with each harness's
+SKIP_UP flag. It is green end-to-end against the Postgres-backed stack (commit 915bcbb). The
+next platform/app slice from `PLAN.md` is open (e.g. a real frontend/UI or further platform
+hardening) — confirm direction with the human before adding app surface. Keep Docker rebuilds
+controlled: the host runs near-full and `scripts/up.sh` rebuilds images by default (use
+`LIVE_ALL_SKIP_UP=1` / `*_SKIP_UP=1` to reuse an already-running stack).
 
 Fresh agents should start with:
 
@@ -726,3 +729,15 @@ Append-only, timestamped chronology (newest at the bottom); captures non-commit 
   not yet orchestrate those live scripts itself. Docker disk stayed tight at about 3.5 GiB
   free after the run, so teardown/prune should follow if no immediate live follow-up is
   needed.
+- 2026-06-20 15:30 PDT — Claude — added `scripts/verify-live-all.sh`, the one-command live
+  acceptance orchestrator (stack up once, then cart/catalog/order-payment live SEC gates via
+  each harness's SKIP_UP flag) — the live counterpart to `verify-all.sh`. The consolidated run
+  exposed two cross-gate defects the per-service gates had missed: (1) cart dynamic-ownership
+  was not idempotent against persistent Postgres (admin's cart survives runs while SpiceDB
+  resets on a fresh `up` → gate-4 403) — the reset now clears non-seeded carts from `cart_db`;
+  (2) the cart harness `DEFAULT_SCOPES` was stale (cart-only), so `restore_default_auth`
+  narrowed auth-service's `OIDC_SCOPES` and broke the catalog/order gates run after it (catalog
+  merchant write → gate-3 403) — now the full set incl `catalog:write`, `orders:read`,
+  `orders:write`. Watched green: `LIVE_ALL_SKIP_UP=1 sh scripts/verify-live-all.sh` — all three
+  live SEC gates passed (15 SEC PASS, 10 Playwright) against the 10-container Postgres-backed
+  stack. Committed 915bcbb. Tore the stack down + pruned afterward.

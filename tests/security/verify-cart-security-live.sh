@@ -11,7 +11,7 @@ require_cmd node "Install Node 26.3.0."
 
 warn_low_disk 3
 
-DEFAULT_SCOPES="openid,profile,email,roles,api.audience,api.read,cart:read,cart:write"
+DEFAULT_SCOPES="openid,profile,email,roles,api.audience,api.read,cart:read,cart:write,catalog:write,orders:read,orders:write"
 MISSING_CART_SCOPE_SCOPES="openid,profile,email,roles,api.audience,api.read"
 NON_COMMERCE_AUD_SCOPES="openid,profile,email,roles,api.read,cart:read,cart:write"
 
@@ -69,7 +69,11 @@ enable_cart_fixtures() {
 }
 
 reset_cart_service_for_dynamic_ownership() {
-  info "recreating cart-service so dynamic-ownership case starts without an admin cart"
+  info "clearing dynamically-provisioned carts so the dynamic-ownership case starts without an admin cart"
+  # Postgres persists carts across runs (unlike the old in-memory repo), so recreating the
+  # container is not enough — remove any cart that is not a seeded fixture (alice/bob).
+  docker compose exec -T postgres psql -U "${POSTGRES_USER:-commerce}" -d cart_db \
+    -c "DELETE FROM carts WHERE owner_sub NOT IN ('alice', 'bob')" >/dev/null 2>&1 || true
   CART_SERVICE_SPRING_PROFILES_ACTIVE=test-fixture \
     docker compose up -d --no-build --force-recreate cart-service apisix >/dev/null
   wait_service_healthy cart-service
