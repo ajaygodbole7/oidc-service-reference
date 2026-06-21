@@ -66,8 +66,12 @@ complementing the heavier vitest in `verify-frontend.sh`. It is source-based on 
 (Java-version-proof; ArchUnit/ASM lags this
 repo's JDK class-file version and fights the enforcer's dependencyConvergence). The
 platform-verification ladder (orchestrator, SpiceDB outage, trace evidence, architecture
-gates) is now substantially complete; pick the next slice from `PLAN.md` and confirm direction
-with the human before adding product/app surface.
+gates) is complete. The final slice, documentation, is in progress: `README.md` and the core
+security trio (`docs/architecture.md`, `docs/authorization-model.md`, `docs/token-model.md`) are
+written. Remaining: `docs/domain-modeling.md`, `docs/security-behind-the-scenes.md`,
+`docs/business-flows.md`, `docs/security-verification.md`, `docs/threat-model.md`, and
+`docs/production-hardening.md`. (`scripts/up.sh` also references a `SECURITY.md` that does not
+exist — create it or drop the reference.)
 
 The live SEC harnesses are collapsed into one orchestrated command,
 `scripts/verify-live-all.sh` (the live counterpart to the static `verify-all.sh`): it brings
@@ -855,3 +859,12 @@ Append-only, timestamped chronology (newest at the bottom); captures non-commit 
   here (a false-green); the gate now fails loudly if it ever scans zero files. Verified green;
   teeth proven (an `access_token` reference fails ARCH-FE-NO-TOKEN-NAMES; a `localStorage.setItem`
   fails ARCH-FE-NO-AUTH-STORAGE), both reverted.
+- 2026-06-20 17:20 PDT — Claude — started the final documentation slice. Wrote `README.md` (the
+  missing entry point: four-gate ladder, architecture/request path, run, verify, token boundary;
+  committed aae9c86) and the core security trio under `docs/`: `architecture.md`,
+  `authorization-model.md`, and `token-model.md`. All clean (no marketing/slop, no em-dashes) and
+  doc/code-synced: the schema block matches `authorization-service/schema.zed`, ports match
+  `scripts/up.sh`, scopes/audiences/clients match the realm, and SEC-* IDs match the live suite.
+  Remaining docs: domain-modeling, security-behind-the-scenes, business-flows,
+  security-verification, threat-model, production-hardening. Noted that `up.sh` references a
+  non-existent `SECURITY.md`.
