@@ -52,13 +52,10 @@ fe_app_files() {
     ! -name '*.test.ts' ! -name '*.test.tsx' ! -name 'test-setup.ts' 2>/dev/null
 }
 
-# Fail if any SPA app file matches $pattern. Fails loudly when zero files are scanned —
-# a gate that greps nothing is a false-green.
+# Fail if any SPA app file (in $fe_files, computed once by the caller) matches $pattern.
 fe_assert_absent() {
   pattern="$1"; id="$2"; purpose="$3"
-  files="$(fe_app_files)"
-  [ -n "$files" ] || fail_check "$id" "no SPA source files found to scan; $purpose"
-  if printf '%s\n' "$files" | tr '\n' '\0' | xargs -0 grep -En "$pattern" \
+  if printf '%s\n' "$fe_files" | tr '\n' '\0' | xargs -0 grep -En "$pattern" \
       >/tmp/oidc-service-reference-arch.out 2>/dev/null; then
     cat /tmp/oidc-service-reference-arch.out >&2
     fail_check "$id" "$purpose"
@@ -105,6 +102,10 @@ done
 # Complements frontend/src/architecture.test.ts (vitest, run by verify-frontend.sh): this is
 # fast, static, dependency-free, and runs inside verify-all without pnpm or a live stack.
 if [ -d frontend/src ]; then
+  # Enumerate the SPA app files once, then run each rule over the cached list. Fail loudly if
+  # zero files are scanned: a gate that greps nothing is a false-green.
+  fe_files="$(fe_app_files)"
+  [ -n "$fe_files" ] || fail_check "ARCH-FE-TOKEN-BOUNDARY" "no SPA source files found to scan; the SPA token boundary is unverifiable"
   fe_assert_absent "access_token|refresh_token|id_token" \
     "ARCH-FE-NO-TOKEN-NAMES" "SPA source must never name access/refresh/id tokens; tokens stay server-side"
   fe_assert_absent "[Aa]uthorization" \

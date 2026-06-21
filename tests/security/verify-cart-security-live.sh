@@ -11,6 +11,9 @@ require_cmd node "Install Node 26.3.0."
 
 warn_low_disk 3
 
+# Full default scope set, and the de-facto cross-harness baseline: verify-live-all runs cart
+# first, and cart's restore_default_auth (EXIT trap) leaves auth-service configured with these
+# scopes, which the catalog and order live gates then rely on. Keep catalog:write + orders:* here.
 DEFAULT_SCOPES="openid,profile,email,roles,api.audience,api.read,cart:read,cart:write,catalog:write,orders:read,orders:write"
 MISSING_CART_SCOPE_SCOPES="openid,profile,email,roles,api.audience,api.read"
 NON_COMMERCE_AUD_SCOPES="openid,profile,email,roles,api.read,cart:read,cart:write"
