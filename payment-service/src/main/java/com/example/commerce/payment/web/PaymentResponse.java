@@ -1,8 +1,10 @@
 package com.example.commerce.payment.web;
 
 import com.example.commerce.payment.domain.PaymentAuthorization;
+import com.example.commerce.payment.domain.PaymentStatus;
 
-record PaymentResponse(String paymentId, String orderId, String status, String currency, long amountCents) {
+record PaymentResponse(
+    String paymentId, String orderId, PaymentStatus status, String currency, long amountCents) {
 
   static PaymentResponse from(PaymentAuthorization authorization) {
     return new PaymentResponse(

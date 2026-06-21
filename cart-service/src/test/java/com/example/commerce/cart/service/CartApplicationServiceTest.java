@@ -29,6 +29,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DuplicateKeyException;
 
 class CartApplicationServiceTest {
 
@@ -140,6 +141,49 @@ class CartApplicationServiceTest {
             new ResourceRef("cart", "generated-cart"), "owner", SubjectRef.user("carol")));
     assertThat(repository.saveCount()).isEqualTo(1);
     assertThat(repository.findByOwnerSub("carol")).isPresent();
+  }
+
+  @Test
+  void first_add_mints_a_thirteen_char_tsid_style_cart_id_from_the_injected_supplier() {
+    RecordingCartRepository repository = new RecordingCartRepository(List.of());
+    RecordingAuthorizationClient authorizationClient = recordingClient(new InMemoryAuthorizationClient());
+    // Stand-in for TsidGenerator.newId(): a fixed-width 13-char Crockford base32 string.
+    CartApplicationService service = service(
+        repository,
+        authorizationClient,
+        () -> new CartId("0ABCDEFGHJKMN"));
+
+    CartResult result = service.addItem(principal("carol", "cart:write"), addItemCommand());
+
+    assertThat(result.cart().id().value()).hasSize(13);
+    assertThat(result.cart().id()).isEqualTo(new CartId("0ABCDEFGHJKMN"));
+    assertThat(repository.findByOwnerSub("carol")).isPresent();
+  }
+
+  @Test
+  void first_add_re_resolves_existing_cart_when_concurrent_create_raises_duplicate_key() {
+    // First save throws DuplicateKeyException (a concurrent first-add won the owner_sub unique);
+    // the service must fall through, re-read the existing cart, and add to it.
+    Cart concurrentlyCreated = new Cart(new CartId("existing-cart"), "carol", List.of());
+    DuplicateKeyOnFirstSaveRepository repository =
+        new DuplicateKeyOnFirstSaveRepository(concurrentlyCreated);
+    RecordingAuthorizationClient authorizationClient = recordingClient(new InMemoryAuthorizationClient()
+        .grant(SubjectRef.user("carol"), new ResourceRef("cart", "existing-cart"), WRITE));
+    CartApplicationService service = service(
+        repository,
+        authorizationClient,
+        () -> new CartId("generated-cart"));
+
+    CartResult result = service.addItem(principal("carol", "cart:write"), addItemCommand());
+
+    // Ends up on the concurrently-created cart, not the discarded generated id.
+    assertThat(result.cart().id()).isEqualTo(new CartId("existing-cart"));
+    assertThat(result.cart().items()).hasSize(1);
+    // Two save attempts: the failed create, then the successful add to the existing cart.
+    assertThat(repository.saveAttempts()).isEqualTo(2);
+    // A resource (write) check ran against the re-resolved existing cart.
+    assertThat(authorizationClient.requests())
+        .containsExactly(new CheckRequest("user:carol", "cart:existing-cart", "write"));
   }
 
   @Test
@@ -349,6 +393,57 @@ class CartApplicationServiceTest {
     }
 
     private static Cart copy(Cart cart) {
+      return new Cart(cart.id(), cart.ownerSub(), cart.items());
+    }
+  }
+
+  /**
+   * Simulates the concurrent-first-add race: {@code findByOwnerSub} is empty until a save is
+   * attempted, the first {@code save} throws {@link DuplicateKeyException} (a competing thread already
+   * created the owner's cart on the {@code owner_sub} unique), and from then on the
+   * concurrently-created cart is visible so the service can re-resolve and add to it.
+   */
+  private static final class DuplicateKeyOnFirstSaveRepository implements CartRepository {
+
+    private final Cart concurrentlyCreated;
+    private boolean firstSaveAttempted;
+    private @org.jspecify.annotations.Nullable Cart stored;
+    private int saveAttempts;
+
+    private DuplicateKeyOnFirstSaveRepository(Cart concurrentlyCreated) {
+      this.concurrentlyCreated = concurrentlyCreated;
+    }
+
+    @Override
+    public Optional<Cart> findById(CartId cartId) {
+      return Optional.ofNullable(stored).filter(cart -> cart.id().equals(cartId)).map(this::copy);
+    }
+
+    @Override
+    public Optional<Cart> findByOwnerSub(String ownerSub) {
+      return Optional.ofNullable(stored)
+          .filter(cart -> cart.ownerSub().equals(ownerSub))
+          .map(this::copy);
+    }
+
+    @Override
+    public Cart save(Cart cart) {
+      saveAttempts++;
+      if (!firstSaveAttempted) {
+        firstSaveAttempted = true;
+        // The competing create becomes visible exactly as it would after the unique violation.
+        stored = copy(concurrentlyCreated);
+        throw new DuplicateKeyException("owner_sub unique violation");
+      }
+      stored = copy(cart);
+      return copy(cart);
+    }
+
+    int saveAttempts() {
+      return saveAttempts;
+    }
+
+    private Cart copy(Cart cart) {
       return new Cart(cart.id(), cart.ownerSub(), cart.items());
     }
   }

@@ -1,5 +1,6 @@
 package com.example.commerce.cart.config;
 
+import com.example.commerce.cart.domain.CartId;
 import com.example.commerce.cart.domain.CartRepository;
 import com.example.commerce.cart.persistence.CartRowRepository;
 import com.example.commerce.cart.persistence.PostgresCartRepository;
@@ -9,8 +10,7 @@ import com.example.commerce.security.CommerceJwtValidator;
 import com.example.commerce.security.ResourceAuthorizer;
 import com.example.commerce.security.ScopeAuthorizer;
 import com.example.commerce.security.SpiceDbAuthorizationClient;
-import java.net.URI;
-import org.springframework.beans.factory.annotation.Value;
+import com.example.commerce.web.tsid.TsidGenerator;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
@@ -34,27 +34,24 @@ class CartConfig {
   }
 
   @Bean(destroyMethod = "close")
-  SpiceDbAuthorizationClient authorizationClient(
-      @Value("${cart.spicedb.target:spicedb:50051}") String target,
-      @Value("${cart.spicedb.preshared-key:LOCAL_DEV_SPICEDB_PRESHARED_KEY__CHANGE_BEFORE_DEPLOY}")
-          String presharedKey,
-      @Value("${cart.spicedb.plaintext:true}") boolean plaintext) {
-    return new SpiceDbAuthorizationClient(target, presharedKey, plaintext);
+  SpiceDbAuthorizationClient authorizationClient(CartProperties properties) {
+    CartProperties.Spicedb spicedb = properties.spicedb();
+    return new SpiceDbAuthorizationClient(spicedb.target(), spicedb.presharedKey(), spicedb.plaintext());
   }
 
   @Bean
-  CommerceJwtValidator commerceJwtValidator(
-      @Value("${cart.oidc.issuer-uri}") String issuer,
-      @Value("${cart.oidc.audience:commerce-api}") String audience,
-      @Value("${cart.oidc.jwks-uri}") URI jwksUri) {
-    return CommerceJwtValidator.fromJwksUri(issuer, audience, jwksUri);
+  CommerceJwtValidator commerceJwtValidator(CartProperties properties) {
+    CartProperties.Oidc oidc = properties.oidc();
+    return CommerceJwtValidator.fromJwksUri(oidc.issuerUri().toString(), oidc.audience(), oidc.jwksUri());
   }
 
   @Bean
   CartApplicationService cartApplicationService(
       CartRepository repository,
       ScopeAuthorizer scopeAuthorizer,
-      ResourceAuthorizer resourceAuthorizer) {
-    return new CartApplicationService(repository, scopeAuthorizer, resourceAuthorizer);
+      ResourceAuthorizer resourceAuthorizer,
+      TsidGenerator tsid) {
+    return new CartApplicationService(
+        repository, scopeAuthorizer, resourceAuthorizer, () -> new CartId(tsid.newId()));
   }
 }

@@ -10,11 +10,20 @@ import com.example.commerce.cart.domain.Quantity;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import org.jspecify.annotations.Nullable;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 
 /**
  * Postgres-backed {@link CartRepository}. The cart is an aggregate (root + item collection);
- * Spring Data JDBC replaces the child rows on each save. The assigned cart id drives insert vs update.
+ * Spring Data JDBC replaces the child rows on each save.
+ *
+ * <p>Insert vs update is decided by the row's {@code @Version}, which is round-tripped through the
+ * domain: {@link #findById}/{@link #findByOwnerSub} carry the persisted version onto the {@link Cart},
+ * and {@link #save} writes it straight back with no re-read. A fresh cart has a null version and
+ * inserts; a loaded cart updates with {@code WHERE version = ?} sourced from the version the caller
+ * read, which bumps the version and turns a concurrent stale update into an
+ * {@code OptimisticLockingFailureException}. Because the version is the one the caller observed (not
+ * re-fetched at write time), the lock actually bites through the domain API.
  */
 public final class PostgresCartRepository implements CartRepository {
 
@@ -38,16 +47,11 @@ public final class PostgresCartRepository implements CartRepository {
 
   @Override
   public Cart save(Cart cart) {
-    CartRow row = toRow(cart);
-    if (rows.existsById(cart.id().value())) {
-      aggregateTemplate.update(row);
-    } else {
-      aggregateTemplate.insert(row);
-    }
+    aggregateTemplate.save(toRow(cart, cart.version()));
     return cart;
   }
 
-  private static CartRow toRow(Cart cart) {
+  private static CartRow toRow(Cart cart, @Nullable Long version) {
     List<CartItemRow> items = cart.items().stream()
         .map(item -> new CartItemRow(
             item.productId().value(),
@@ -55,7 +59,7 @@ public final class PostgresCartRepository implements CartRepository {
             item.unitPrice().amount(),
             item.unitPrice().currency()))
         .collect(Collectors.toList());
-    return new CartRow(cart.id().value(), cart.ownerSub(), items);
+    return new CartRow(cart.id().value(), cart.ownerSub(), version, items);
   }
 
   private static Cart toDomain(CartRow row) {
@@ -65,6 +69,6 @@ public final class PostgresCartRepository implements CartRepository {
             new Quantity(item.quantity()),
             new Money(item.unitPriceAmount(), item.unitPriceCurrency())))
         .collect(Collectors.toList());
-    return new Cart(new CartId(row.id()), row.ownerSub(), items);
+    return new Cart(new CartId(row.id()), row.ownerSub(), items, row.version());
   }
 }

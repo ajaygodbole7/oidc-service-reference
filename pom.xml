@@ -12,6 +12,7 @@
 
   <modules>
     <module>commerce-security-common</module>
+    <module>commerce-web-starter</module>
     <module>cart-service</module>
     <module>catalog-service</module>
     <module>order-service</module>

@@ -23,7 +23,8 @@ public final class InMemoryOrderRepository implements OrderRepository {
         new OrderId("alice-order"),
         "alice",
         new CartId("alice-cart"),
-        List.of(new OrderLine(new ProductId("starter-mug"), 1, Money.usd("12.50"))),
+        // Canonical product TSID (was "starter-mug"); order/cart ids stay readable for SpiceDB.
+        List.of(new OrderLine(new ProductId("6801HWW000000"), 1, Money.usd("12.50"))),
         Money.usd("12.50"),
         "local-auth-alice-order",
         Instant.parse("2026-06-20T00:00:00Z")));

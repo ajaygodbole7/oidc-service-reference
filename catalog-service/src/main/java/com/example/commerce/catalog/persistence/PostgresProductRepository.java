@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 
 /**
@@ -35,6 +36,13 @@ public final class PostgresProductRepository implements ProductRepository {
     List<Product> products = new ArrayList<>();
     rows.findAll().forEach(row -> products.add(toDomain(row)));
     products.sort(Comparator.comparing(product -> product.id().value()));
+    return products;
+  }
+
+  @Override
+  public List<Product> findPage(@Nullable String afterId, int limit) {
+    List<Product> products = new ArrayList<>();
+    rows.findPage(afterId, limit).forEach(row -> products.add(toDomain(row)));
     return products;
   }
 

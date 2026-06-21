@@ -12,10 +12,10 @@ import com.example.commerce.security.ResourceAuthorizer;
 import com.example.commerce.security.ResourceRef;
 import com.example.commerce.security.ScopeAuthorizer;
 import com.example.commerce.security.SubjectRef;
+import com.example.commerce.web.tsid.TsidGenerator;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 import java.util.function.Supplier;
 
 public final class OrderApplicationService {
@@ -43,7 +43,8 @@ public final class OrderApplicationService {
       OrderCheckoutPersistence checkoutPersistence,
       PaymentClient paymentClient,
       ScopeAuthorizer scopeAuthorizer,
-      ResourceAuthorizer resourceAuthorizer) {
+      ResourceAuthorizer resourceAuthorizer,
+      TsidGenerator tsidGenerator) {
     this(
         orderRepository,
         cartLookup,
@@ -52,7 +53,8 @@ public final class OrderApplicationService {
         paymentClient,
         scopeAuthorizer,
         resourceAuthorizer,
-        () -> new OrderId(UUID.randomUUID().toString()),
+        // Reserved up front by the recover-forward state machine; TSID is sortable and replaces UUID.
+        () -> new OrderId(tsidGenerator.newId()),
         Clock.systemUTC());
   }
 
@@ -141,7 +143,11 @@ public final class OrderApplicationService {
     DecisionTrace resourceTrace = resourceAuthorizer.requireAllowed(principal, orderResource(orderId), ORDER_CANCEL);
     Order order = orderRepository.findById(orderId)
         .orElseThrow(() -> new OrderNotFoundException("order not found: " + orderId.value()));
-    order.cancel();
+    try {
+      order.cancel();
+    } catch (IllegalStateException e) {
+      throw new OrderAlreadyCancelledException("order already cancelled: " + orderId.value(), e);
+    }
     orderRepository.save(order);
     return new OrderResult(order, List.of(scopeTrace, resourceTrace));
   }

@@ -1,0 +1,16 @@
+# Test-only overrides. This file shadows src/main/resources/application.yml on the test classpath,
+# so it must supply every value OrderProperties requires (the @NotBlank fields with no Java default).
+# Production drops the SpiceDB preshared-key default so a misconfigured deploy fails at boot
+# (OrderProperties validation); the context tests supply explicit dummy values here so the
+# application context refreshes without a real secret or live endpoint in the environment. The
+# repository tests never call the payment client or SpiceDB; these values only need to bind.
+order:
+  oidc:
+    issuer-uri: https://issuer.example.test/realms/test
+    jwks-uri: https://issuer.example.test/realms/test/protocol/openid-connect/certs
+  spicedb:
+    preshared-key: TEST_SPICEDB_PRESHARED_KEY
+  payment:
+    authorize-uri: https://payment.example.test/internal/payments/authorize
+    token-uri: https://issuer.example.test/realms/test/protocol/openid-connect/token
+    client-secret: TEST_SERVICE_CLIENT_SECRET

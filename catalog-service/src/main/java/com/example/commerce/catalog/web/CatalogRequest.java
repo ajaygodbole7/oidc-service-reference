@@ -16,7 +16,6 @@ public final class CatalogRequest {
   }
 
   public record CreateProduct(
-      @NotBlank String id,
       @NotBlank String sku,
       @NotBlank String name,
       @NotNull @DecimalMin("0.00") @Digits(integer = 10, fraction = 2) BigDecimal price,

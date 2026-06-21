@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>4.1.0</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>com.example</groupId>
+  <artifactId>commerce-web-starter</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <name>commerce-web-starter</name>
+  <description>Shared cross-cutting web concerns: RFC 9457 problem-detail advice, MDC trace-id
+    filter, TSID id generator, cursor pagination. Auto-configured so a service adds the dep,
+    sets commerce.error.base-url, and deletes its copied exception handler.</description>
+
+  <properties>
+    <java.version>26</java.version>
+    <tsid.version>2.1.4</tsid.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <!-- Match the platform Nimbus pin so dependencyConvergence stays green
+           through the commerce-security-common transitive. -->
+      <dependency>
+        <groupId>com.nimbusds</groupId>
+        <artifactId>nimbus-jose-jwt</artifactId>
+        <version>10.9</version>
+      </dependency>
+      <dependency>
+        <groupId>io.grpc</groupId>
+        <artifactId>grpc-bom</artifactId>
+        <version>1.72.0</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>com.google.guava</groupId>
+        <artifactId>guava</artifactId>
+        <version>33.5.0-jre</version>
+      </dependency>
+      <dependency>
+        <groupId>com.google.errorprone</groupId>
+        <artifactId>error_prone_annotations</artifactId>
+        <version>2.42.0</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+    <!-- Shared security exceptions the advice maps (AuthorizationDeniedException,
+         InvalidTokenException, AuthorizationUnavailableException). -->
+    <dependency>
+      <groupId>com.example</groupId>
+      <artifactId>commerce-security-common</artifactId>
+      <version>0.1.0-SNAPSHOT</version>
+    </dependency>
+
+    <!-- The advice extends ResponseEntityExceptionHandler; the filter is OncePerRequestFilter. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-webmvc</artifactId>
+    </dependency>
+    <!-- @ConfigurationProperties + AutoConfiguration. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-autoconfigure</artifactId>
+    </dependency>
+    <!-- org.springframework.dao.OptimisticLockingFailureException, mapped to 409 by the advice. -->
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-tx</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-configuration-processor</artifactId>
+      <optional>true</optional>
+    </dependency>
+
+    <!-- 13-char Crockford base32 sortable TSID strings. -->
+    <dependency>
+      <groupId>io.hypersistence</groupId>
+      <artifactId>hypersistence-tsid</artifactId>
+      <version>${tsid.version}</version>
+    </dependency>
+
+    <!-- JSpecify null-safety annotations; packages are @NullMarked. -->
+    <dependency>
+      <groupId>org.jspecify</groupId>
+      <artifactId>jspecify</artifactId>
+      <version>1.0.0</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <!-- Same hygiene gate as the rest of the reactor: Java 26, no Lombok,
+           no Jackson 2, converged dependency versions. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-enforcer-plugin</artifactId>
+        <configuration>
+          <fail>true</fail>
+          <rules>
+            <requireJavaVersion>
+              <version>[26,)</version>
+            </requireJavaVersion>
+            <requireMavenVersion>
+              <version>[3.9.6,)</version>
+            </requireMavenVersion>
+            <dependencyConvergence/>
+            <bannedDependencies>
+              <excludes>
+                <exclude>org.projectlombok:lombok</exclude>
+                <exclude>com.fasterxml.jackson.core:jackson-databind</exclude>
+              </excludes>
+            </bannedDependencies>
+          </rules>
+        </configuration>
+        <executions>
+          <execution>
+            <id>enforce</id>
+            <goals>
+              <goal>enforce</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

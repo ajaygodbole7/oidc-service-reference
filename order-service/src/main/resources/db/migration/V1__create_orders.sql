@@ -1,5 +1,6 @@
 CREATE TABLE orders (
     id                       VARCHAR(255) PRIMARY KEY,
+    version                  BIGINT NOT NULL DEFAULT 0,
     owner_sub                VARCHAR(255) NOT NULL,
     source_cart_id           VARCHAR(255) NOT NULL,
     total_amount             NUMERIC(12, 2) NOT NULL,
@@ -29,8 +30,10 @@ CREATE TABLE order_idempotency (
 );
 
 -- Seed parity with InMemoryOrderRepository.withLocalFixtures.
+-- Order/cart ids stay readable (SpiceDB references them); version starts at 0 (the @Version default).
 INSERT INTO orders (
     id,
+    version,
     owner_sub,
     source_cart_id,
     total_amount,
@@ -40,6 +43,7 @@ INSERT INTO orders (
     status
 ) VALUES (
     'alice-order',
+    0,
     'alice',
     'alice-cart',
     12.50,
@@ -49,6 +53,7 @@ INSERT INTO orders (
     'CONFIRMED'
 );
 
+-- The LINE product id uses the canonical product TSID (was "starter-mug").
 INSERT INTO order_lines (
     order_id,
     line_position,
@@ -59,7 +64,7 @@ INSERT INTO order_lines (
 ) VALUES (
     'alice-order',
     0,
-    'starter-mug',
+    '6801HWW000000',
     1,
     12.50,
     'USD'

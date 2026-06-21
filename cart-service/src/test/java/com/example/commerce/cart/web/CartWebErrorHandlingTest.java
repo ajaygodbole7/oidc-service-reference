@@ -15,6 +15,8 @@ import com.example.commerce.security.CommercePrincipal;
 import com.example.commerce.security.DecisionTrace;
 import com.example.commerce.security.ResourceAuthorizer;
 import com.example.commerce.security.ScopeAuthorizer;
+import com.example.commerce.web.error.CommerceErrorProperties;
+import com.example.commerce.web.error.GlobalExceptionHandler;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -34,7 +36,7 @@ class CartWebErrorHandlingTest {
           DecisionTrace.resource(true, subject, resource, permission, "relationship_found"))));
   private final MockMvc mockMvc = MockMvcBuilders
       .standaloneSetup(new CartController(service))
-      .setControllerAdvice(new RestExceptionHandler())
+      .setControllerAdvice(new GlobalExceptionHandler(errorProperties()))
       .setValidator(validator())
       .build();
 
@@ -91,7 +93,7 @@ class CartWebErrorHandlingTest {
         .andExpect(status().isInternalServerError())
         .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
         .andExpect(jsonPath("$.title").value("Internal server error"))
-        .andExpect(jsonPath("$.detail").value("unexpected cart-service error"));
+        .andExpect(jsonPath("$.detail").value("unexpected error"));
   }
 
   private static CommercePrincipal principal() {
@@ -102,6 +104,12 @@ class CartWebErrorHandlingTest {
     LocalValidatorFactoryBean validator = new LocalValidatorFactoryBean();
     validator.afterPropertiesSet();
     return validator;
+  }
+
+  private static CommerceErrorProperties errorProperties() {
+    CommerceErrorProperties properties = new CommerceErrorProperties();
+    properties.setBaseUrl("https://errors.example.com/cart");
+    return properties;
   }
 
   private static final class RecordingCartRepository implements CartRepository {

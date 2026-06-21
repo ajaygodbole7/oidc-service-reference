@@ -1,6 +1,7 @@
 package com.example.commerce.cart.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.example.commerce.cart.domain.Cart;
 import com.example.commerce.cart.domain.CartId;
@@ -9,11 +10,11 @@ import com.example.commerce.cart.domain.Money;
 import com.example.commerce.cart.domain.ProductId;
 import com.example.commerce.cart.domain.Quantity;
 import java.math.BigDecimal;
-import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -47,8 +48,19 @@ class PostgresCartRepositoryTest {
   }
 
   @Test
+  void findByOwnerSubReturnsEmptyOptionalForAnUnknownOwner() {
+    assertThat(repository.findByOwnerSub("nobody")).isEmpty();
+  }
+
+  @Test
+  void findByIdReturnsEmptyOptionalForAnUnknownCartId() {
+    assertThat(repository.findById(new CartId("missing-cart"))).isEmpty();
+  }
+
+  @Test
   void persistsItemsThenReplacesThemOnReSave() {
-    Cart cart = new Cart(new CartId("alice-cart"), "alice", List.of());
+    // Load the seeded cart so the save round-trips its version (a new Cart would insert a duplicate id).
+    Cart cart = repository.findById(new CartId("alice-cart")).orElseThrow();
     cart.addItem(new ProductId("starter-mug"), new Quantity(2), new Money(new BigDecimal("12.50"), "USD"));
     repository.save(cart);
 
@@ -60,5 +72,23 @@ class PostgresCartRepositoryTest {
     repository.save(reloaded);
 
     assertThat(repository.findById(new CartId("alice-cart")).orElseThrow().items()).hasSize(2);
+  }
+
+  @Test
+  void stale_version_update_raises_optimistic_locking_failure() {
+    // Two readers load the seeded cart at the same persisted version through the domain API.
+    Cart first = repository.findById(new CartId("alice-cart")).orElseThrow();
+    Cart second = repository.findById(new CartId("alice-cart")).orElseThrow();
+    assertThat(first.version()).isEqualTo(second.version());
+
+    // First writer wins: its UPDATE ... WHERE version = <v> succeeds and bumps the persisted version.
+    first.addItem(new ProductId("starter-mug"), new Quantity(1), new Money(new BigDecimal("12.50"), "USD"));
+    repository.save(first);
+
+    // Second writer is stale (still the pre-bump version): WHERE version = <v> matches no row, so
+    // Spring Data JDBC raises OptimisticLockingFailureException rather than silently losing the update.
+    second.addItem(new ProductId("travel-bag"), new Quantity(1), new Money(new BigDecimal("48.00"), "USD"));
+    assertThatThrownBy(() -> repository.save(second))
+        .isInstanceOf(OptimisticLockingFailureException.class);
   }
 }

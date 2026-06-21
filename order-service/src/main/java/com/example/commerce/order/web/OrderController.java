@@ -3,9 +3,11 @@ package com.example.commerce.order.web;
 import com.example.commerce.order.domain.IdempotencyKey;
 import com.example.commerce.order.domain.OrderId;
 import com.example.commerce.order.service.CheckoutCommand;
+import com.example.commerce.order.service.MissingIdempotencyKeyException;
 import com.example.commerce.order.service.OrderApplicationService;
 import com.example.commerce.security.CommercePrincipal;
 import jakarta.validation.Valid;
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -29,8 +31,11 @@ class OrderController {
   @ResponseStatus(HttpStatus.CREATED)
   OrderResponse checkout(
       @RequestAttribute("commercePrincipal") CommercePrincipal principal,
-      @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+      @RequestHeader(value = "Idempotency-Key", required = false) @Nullable String idempotencyKey,
       @Valid @RequestBody OrderRequest.Checkout request) {
+    if (idempotencyKey == null || idempotencyKey.isBlank()) {
+      throw new MissingIdempotencyKeyException("idempotency key is required");
+    }
     CheckoutCommand command = new CheckoutCommand(request.paymentMethodId(), request.shippingPostalCode());
     return OrderResponse.from(service.checkout(principal, command, new IdempotencyKey(idempotencyKey)));
   }

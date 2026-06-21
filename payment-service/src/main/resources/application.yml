@@ -1,6 +1,24 @@
 server:
   port: ${SERVER_PORT:8085}
 
+spring:
+  application:
+    name: payment-service
+  datasource:
+    url: ${PAYMENT_DATASOURCE_URL:jdbc:postgresql://postgres:5432/payment_db}
+    username: ${PAYMENT_DATASOURCE_USERNAME:commerce}
+    password: ${PAYMENT_DATASOURCE_PASSWORD:LOCAL_DEV_POSTGRES_PASSWORD__CHANGE_BEFORE_DEPLOY}
+  flyway:
+    enabled: true
+
+commerce:
+  error:
+    base-url: https://errors.example.com/payment
+
+logging:
+  pattern:
+    correlation: "[${spring.application.name:},%X{traceId:-}] "
+
 management:
   server:
     port: ${MANAGEMENT_PORT:9085}
@@ -17,11 +35,3 @@ payment:
     expected-client-id: ${PAYMENT_OIDC_EXPECTED_CLIENT_ID:order-service}
     required-scope: ${PAYMENT_OIDC_REQUIRED_SCOPE:payments:authorize}
     jwks-uri: ${PAYMENT_OIDC_JWKS_URI:http://keycloak:8080/realms/oidc-service-reference/protocol/openid-connect/certs}
-
-spring:
-  datasource:
-    url: ${PAYMENT_DATASOURCE_URL:jdbc:postgresql://postgres:5432/payment_db}
-    username: ${PAYMENT_DATASOURCE_USERNAME:commerce}
-    password: ${PAYMENT_DATASOURCE_PASSWORD:LOCAL_DEV_POSTGRES_PASSWORD__CHANGE_BEFORE_DEPLOY}
-  flyway:
-    enabled: true

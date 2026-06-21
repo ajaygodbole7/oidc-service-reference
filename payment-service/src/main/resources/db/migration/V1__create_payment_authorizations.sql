@@ -1,5 +1,6 @@
 CREATE TABLE payment_authorizations (
     payment_id          VARCHAR(255) PRIMARY KEY,
+    version             BIGINT NOT NULL DEFAULT 0,
     order_id            VARCHAR(255) NOT NULL,
     user_sub            VARCHAR(255) NOT NULL,
     amount_amount       NUMERIC(12, 2) NOT NULL,

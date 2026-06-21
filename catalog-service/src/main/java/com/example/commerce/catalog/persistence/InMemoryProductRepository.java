@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import org.jspecify.annotations.Nullable;
 
 public final class InMemoryProductRepository implements ProductRepository {
 
@@ -25,17 +26,38 @@ public final class InMemoryProductRepository implements ProductRepository {
   public static InMemoryProductRepository withLocalFixtures() {
     return new InMemoryProductRepository(List.of(
         new Product(
-            new ProductId("starter-mug"),
+            new ProductId("6801HWW000000"),
             new Sku("MUG-001"),
             new ProductName("Starter Mug"),
             Money.usd("12.50"),
             InventoryStatus.IN_STOCK,
             new StoreId("main")),
         new Product(
-            new ProductId("travel-bag"),
+            new ProductId("6801HWW00YGJ3"),
             new Sku("BAG-002"),
             new ProductName("Travel Bag"),
             Money.usd("48.00"),
+            InventoryStatus.LOW_STOCK,
+            new StoreId("main")),
+        new Product(
+            new ProductId("6801HWW01X146"),
+            new Sku("LAMP-003"),
+            new ProductName("Desk Lamp"),
+            Money.usd("34.00"),
+            InventoryStatus.IN_STOCK,
+            new StoreId("main")),
+        new Product(
+            new ProductId("6801HWW02VHP9"),
+            new Sku("NOTE-004"),
+            new ProductName("Field Notebook"),
+            Money.usd("9.00"),
+            InventoryStatus.IN_STOCK,
+            new StoreId("main")),
+        new Product(
+            new ProductId("6801HWW03T28C"),
+            new Sku("TOTE-005"),
+            new ProductName("Canvas Tote"),
+            Money.usd("22.00"),
             InventoryStatus.LOW_STOCK,
             new StoreId("main"))));
   }
@@ -44,6 +66,15 @@ public final class InMemoryProductRepository implements ProductRepository {
   public List<Product> findAll() {
     return products.values().stream()
         .sorted(Comparator.comparing(product -> product.id().value()))
+        .toList();
+  }
+
+  @Override
+  public List<Product> findPage(@Nullable String afterId, int limit) {
+    return products.values().stream()
+        .sorted(Comparator.comparing(product -> product.id().value()))
+        .filter(product -> afterId == null || product.id().value().compareTo(afterId) > 0)
+        .limit(limit)
         .toList();
   }
 

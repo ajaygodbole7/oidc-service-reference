@@ -15,8 +15,13 @@ import org.testcontainers.utility.DockerImageName;
  * test yet fail the container on boot. This loads the real context against real Postgres
  * (all other external clients construct lazily) and fails closed if any bean cannot be created.
  */
+// Default (MOCK) web environment so the loaded context matches order-service's real runtime: it
+// runs as a web application, and the starter's web beans (TsidGenerator, TraceIdFilter,
+// GlobalExceptionHandler) are @ConditionalOnWebApplication. WebEnvironment.NONE skips those beans,
+// so orderApplicationService (which needs TsidGenerator) fails to wire — a context shape production
+// never uses. MOCK does not bind a port; it is the same web context the other Testcontainers tests use.
 @Testcontainers
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
+@SpringBootTest
 class OrderServiceContextTest {
 
   @Container

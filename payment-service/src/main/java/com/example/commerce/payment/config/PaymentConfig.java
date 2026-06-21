@@ -5,14 +5,15 @@ import com.example.commerce.payment.persistence.PaymentAuthorizationRowRepositor
 import com.example.commerce.payment.persistence.PostgresPaymentAuthorizationRepository;
 import com.example.commerce.payment.service.PaymentApplicationService;
 import com.example.commerce.security.ServiceJwtValidator;
-import java.net.URI;
+import com.example.commerce.web.tsid.TsidGenerator;
 import java.time.Clock;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 
 @Configuration
+@EnableConfigurationProperties(PaymentProperties.class)
 class PaymentConfig {
 
   @Bean
@@ -28,18 +29,17 @@ class PaymentConfig {
 
   @Bean
   PaymentApplicationService paymentApplicationService(
-      PaymentAuthorizationRepository repository, Clock paymentClock) {
-    return new PaymentApplicationService(repository, paymentClock);
+      PaymentAuthorizationRepository repository, TsidGenerator tsidGenerator, Clock paymentClock) {
+    return new PaymentApplicationService(repository, tsidGenerator, paymentClock);
   }
 
   @Bean
-  ServiceJwtValidator serviceJwtValidator(
-      @Value("${payment.oidc.issuer-uri}") String issuer,
-      @Value("${payment.oidc.audience:payment-service}") String audience,
-      @Value("${payment.oidc.expected-client-id:order-service}") String expectedClientId,
-      @Value("${payment.oidc.required-scope:payments:authorize}") String requiredScope,
-      @Value("${payment.oidc.jwks-uri}") URI jwksUri) {
+  ServiceJwtValidator serviceJwtValidator(PaymentProperties properties) {
     return ServiceJwtValidator.fromJwksUri(
-        issuer, audience, expectedClientId, requiredScope, jwksUri);
+        properties.issuerUri(),
+        properties.audience(),
+        properties.expectedClientId(),
+        properties.requiredScope(),
+        properties.jwksUri());
   }
 }

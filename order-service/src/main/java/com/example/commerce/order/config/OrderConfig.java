@@ -1,15 +1,17 @@
 package com.example.commerce.order.config;
 
 import com.example.commerce.order.domain.OrderRepository;
-import com.example.commerce.order.persistence.InMemoryCartLookup;
+import com.example.commerce.order.integration.HttpPaymentClient;
+import com.example.commerce.order.integration.OrderHttp;
+import com.example.commerce.order.integration.RetryingPaymentClient;
 import com.example.commerce.order.persistence.OrderIdempotencyRowRepository;
 import com.example.commerce.order.persistence.OrderRowRepository;
 import com.example.commerce.order.persistence.PostgresIdempotencyRepository;
 import com.example.commerce.order.persistence.PostgresOrderRepository;
+import com.example.commerce.order.persistence.InMemoryCartLookup;
 import com.example.commerce.order.service.CartLookup;
 import com.example.commerce.order.service.IdempotencyRepository;
 import com.example.commerce.order.service.OrderApplicationService;
-import com.example.commerce.order.integration.HttpPaymentClient;
 import com.example.commerce.order.service.OrderCheckoutPersistence;
 import com.example.commerce.order.service.PaymentClient;
 import com.example.commerce.security.AuthorizationClient;
@@ -17,14 +19,15 @@ import com.example.commerce.security.CommerceJwtValidator;
 import com.example.commerce.security.ResourceAuthorizer;
 import com.example.commerce.security.ScopeAuthorizer;
 import com.example.commerce.security.SpiceDbAuthorizationClient;
-import java.net.URI;
-import org.springframework.beans.factory.annotation.Value;
+import com.example.commerce.web.tsid.TsidGenerator;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 import org.springframework.web.client.RestClient;
 
 @Configuration
+@EnableConfigurationProperties(OrderProperties.class)
 class OrderConfig {
 
   @Bean
@@ -60,32 +63,31 @@ class OrderConfig {
   }
 
   @Bean
-  PaymentClient paymentClient(
-      @Value("${order.payment.authorize-uri}") String authorizeUri,
-      @Value("${order.payment.token-uri}") String tokenUri,
-      @Value("${order.payment.client-id:order-service}") String clientId,
-      @Value("${order.payment.client-secret}") String clientSecret) {
-    // RestClient.create() rather than an injected RestClient.Builder: order-service's context
-    // does not auto-configure a RestClient.Builder bean, and a static client needs none.
-    return new HttpPaymentClient(
-        RestClient.create(), authorizeUri, tokenUri, clientId, clientSecret);
+  PaymentClient paymentClient(OrderProperties properties) {
+    OrderProperties.Payment payment = properties.getPayment();
+    // Finite transport timeouts on the S2S client (a bare RestClient.create() is infinite); a
+    // separate RetryingPaymentClient bean then retries TRANSIENT failures only — never a decline/4xx.
+    RestClient http = OrderHttp.paymentClient(payment.getConnectTimeout(), payment.getReadTimeout());
+    HttpPaymentClient delegate = new HttpPaymentClient(
+        http,
+        payment.getAuthorizeUri(),
+        payment.getTokenUri(),
+        payment.getClientId(),
+        payment.getClientSecret());
+    return new RetryingPaymentClient(delegate, payment.getMaxAttempts(), payment.getRetryBackoff());
   }
 
   @Bean(destroyMethod = "close")
-  SpiceDbAuthorizationClient authorizationClient(
-      @Value("${order.spicedb.target:spicedb:50051}") String target,
-      @Value("${order.spicedb.preshared-key:LOCAL_DEV_SPICEDB_PRESHARED_KEY__CHANGE_BEFORE_DEPLOY}")
-          String presharedKey,
-      @Value("${order.spicedb.plaintext:true}") boolean plaintext) {
-    return new SpiceDbAuthorizationClient(target, presharedKey, plaintext);
+  SpiceDbAuthorizationClient authorizationClient(OrderProperties properties) {
+    OrderProperties.SpiceDb spicedb = properties.getSpicedb();
+    return new SpiceDbAuthorizationClient(
+        spicedb.getTarget(), spicedb.getPresharedKey(), spicedb.isPlaintext());
   }
 
   @Bean
-  CommerceJwtValidator commerceJwtValidator(
-      @Value("${order.oidc.issuer-uri}") String issuer,
-      @Value("${order.oidc.audience:commerce-api}") String audience,
-      @Value("${order.oidc.jwks-uri}") URI jwksUri) {
-    return CommerceJwtValidator.fromJwksUri(issuer, audience, jwksUri);
+  CommerceJwtValidator commerceJwtValidator(OrderProperties properties) {
+    OrderProperties.Oidc oidc = properties.getOidc();
+    return CommerceJwtValidator.fromJwksUri(oidc.getIssuerUri(), oidc.getAudience(), oidc.getJwksUri());
   }
 
   @Bean
@@ -96,7 +98,10 @@ class OrderConfig {
       OrderCheckoutPersistence orderCheckoutPersistence,
       PaymentClient paymentClient,
       ScopeAuthorizer scopeAuthorizer,
-      ResourceAuthorizer resourceAuthorizer) {
+      ResourceAuthorizer resourceAuthorizer,
+      TsidGenerator tsidGenerator) {
+    // Reserve-then-claim: a fresh OrderId is minted up front (TSID, sortable) and the idempotency
+    // claim races on it; the recover-forward state machine keeps the SAME reserved id on replay.
     return new OrderApplicationService(
         orderRepository,
         cartLookup,
@@ -104,6 +109,7 @@ class OrderConfig {
         orderCheckoutPersistence,
         paymentClient,
         scopeAuthorizer,
-        resourceAuthorizer);
+        resourceAuthorizer,
+        tsidGenerator);
   }
 }

@@ -53,6 +53,11 @@
       <version>0.1.0-SNAPSHOT</version>
     </dependency>
     <dependency>
+      <groupId>com.example</groupId>
+      <artifactId>commerce-web-starter</artifactId>
+      <version>0.1.0-SNAPSHOT</version>
+    </dependency>
+    <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-webmvc</artifactId>
     </dependency>
@@ -117,6 +122,14 @@
     <dependency>
       <groupId>org.testcontainers</groupId>
       <artifactId>testcontainers-junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- Counts SQL statements so the N+1 guard test can assert the child-collection load
+         stays a single round trip (datasource-proxy wraps the real DataSource in test only). -->
+    <dependency>
+      <groupId>net.ttddyy</groupId>
+      <artifactId>datasource-proxy</artifactId>
+      <version>1.11.0</version>
       <scope>test</scope>
     </dependency>
   </dependencies>

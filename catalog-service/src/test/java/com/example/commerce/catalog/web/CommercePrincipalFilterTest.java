@@ -22,11 +22,16 @@ import com.example.commerce.security.DecisionTrace;
 import com.example.commerce.security.InvalidTokenException;
 import com.example.commerce.security.ResourceAuthorizer;
 import com.example.commerce.security.ScopeAuthorizer;
+import com.example.commerce.web.error.CommerceErrorProperties;
+import com.example.commerce.web.error.GlobalExceptionHandler;
+import com.example.commerce.web.pagination.CursorPaginator;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -36,12 +41,15 @@ import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 
 class CommercePrincipalFilterTest {
 
+  private static final String MUG_ID = "6801HWW000000";
+
   private final RecordingProductRepository repository = repository();
   private final CatalogApplicationService service = new CatalogApplicationService(
       repository,
       new ScopeAuthorizer(),
       new ResourceAuthorizer((subject, resource, permission) -> AuthorizationDecision.allow(
-          DecisionTrace.resource(true, subject, resource, permission, "relationship_found"))));
+          DecisionTrace.resource(true, subject, resource, permission, "relationship_found"))),
+      new CursorPaginator(20, 100));
 
   @Test
   void anonymous_get_skips_jwt_validation() throws Exception {
@@ -50,7 +58,7 @@ class CommercePrincipalFilterTest {
 
     mockMvc.perform(get("/api/catalog/products"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.products[0].id").value("starter-mug"));
+        .andExpect(jsonPath("$.products[0].id").value(MUG_ID));
 
     assertThat(validator.validateCalls()).isZero();
   }
@@ -103,9 +111,9 @@ class CommercePrincipalFilterTest {
 
   private MockMvc mockMvc(CommercePrincipalFilter.CatalogTokenValidator validator) {
     return MockMvcBuilders
-        .standaloneSetup(new CatalogController(service))
+        .standaloneSetup(new CatalogController(service, () -> "new-product"))
         .addFilters(new CommercePrincipalFilter(validator))
-        .setControllerAdvice(new RestExceptionHandler())
+        .setControllerAdvice(new GlobalExceptionHandler(errorProperties()))
         .setValidator(validator())
         .build();
   }
@@ -113,13 +121,18 @@ class CommercePrincipalFilterTest {
   private static String createJson() {
     return """
         {
-          "id": "new-product",
           "sku": "SKU-NEW",
           "name": "New Product",
           "price": 19.99,
           "inventoryStatus": "IN_STOCK"
         }
         """;
+  }
+
+  private static CommerceErrorProperties errorProperties() {
+    CommerceErrorProperties properties = new CommerceErrorProperties();
+    properties.setBaseUrl("https://errors.example.com/catalog");
+    return properties;
   }
 
   private static LocalValidatorFactoryBean validator() {
@@ -130,7 +143,7 @@ class CommercePrincipalFilterTest {
 
   private static RecordingProductRepository repository() {
     return new RecordingProductRepository(List.of(new Product(
-        new ProductId("starter-mug"),
+        new ProductId(MUG_ID),
         new Sku("MUG-001"),
         new ProductName("Starter Mug"),
         Money.usd("12.50"),
@@ -149,6 +162,15 @@ class CommercePrincipalFilterTest {
     @Override
     public List<Product> findAll() {
       return List.copyOf(products.values());
+    }
+
+    @Override
+    public List<Product> findPage(@Nullable String afterId, int limit) {
+      return products.values().stream()
+          .sorted(Comparator.comparing(product -> product.id().value()))
+          .filter(product -> afterId == null || product.id().value().compareTo(afterId) > 0)
+          .limit(limit)
+          .toList();
     }
 
     @Override

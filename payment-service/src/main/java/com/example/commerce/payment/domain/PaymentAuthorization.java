@@ -7,7 +7,7 @@ public record PaymentAuthorization(
     OrderId orderId,
     String userSub,
     Money amount,
-    String status,
+    PaymentStatus status,
     String idempotencyKey,
     String commandFingerprint,
     Instant authorizedAt) {
@@ -19,7 +19,7 @@ public record PaymentAuthorization(
     if (userSub == null || userSub.isBlank()) {
       throw new IllegalArgumentException("user subject is required");
     }
-    if (status == null || status.isBlank()) {
+    if (status == null) {
       throw new IllegalArgumentException("payment status is required");
     }
     if (idempotencyKey == null || idempotencyKey.isBlank()) {

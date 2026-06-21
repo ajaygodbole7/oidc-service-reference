@@ -1,6 +1,10 @@
 CREATE TABLE carts (
     id        VARCHAR(255) PRIMARY KEY,
-    owner_sub VARCHAR(255) NOT NULL UNIQUE
+    owner_sub VARCHAR(255) NOT NULL UNIQUE,
+    -- Optimistic-lock counter. NOT NULL DEFAULT 0 so the seed insert below (which omits
+    -- the column) and any raw insert land at version 0; Spring Data JDBC drives it from
+    -- CartRow.@Version thereafter (WHERE version = ? on update, bumped on success).
+    version   BIGINT NOT NULL DEFAULT 0
 );
 
 CREATE TABLE cart_items (

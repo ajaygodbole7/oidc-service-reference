@@ -2,21 +2,25 @@ package com.example.commerce.payment.service;
 
 import com.example.commerce.payment.domain.PaymentAuthorization;
 import com.example.commerce.payment.domain.PaymentAuthorizationRepository;
+import com.example.commerce.payment.domain.PaymentStatus;
 import com.example.commerce.security.ServicePrincipal;
+import com.example.commerce.web.tsid.TsidGenerator;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Clock;
 import java.util.HexFormat;
-import java.util.UUID;
 import org.springframework.dao.DuplicateKeyException;
 
 public final class PaymentApplicationService {
 
   private final PaymentAuthorizationRepository repository;
+  private final TsidGenerator tsidGenerator;
   private final Clock clock;
 
-  public PaymentApplicationService(PaymentAuthorizationRepository repository, Clock clock) {
+  public PaymentApplicationService(
+      PaymentAuthorizationRepository repository, TsidGenerator tsidGenerator, Clock clock) {
     this.repository = repository;
+    this.tsidGenerator = tsidGenerator;
     this.clock = clock;
   }
 
@@ -41,7 +45,7 @@ public final class PaymentApplicationService {
 
   private static String normalizeIdempotencyKey(String idempotencyKey) {
     if (idempotencyKey == null || idempotencyKey.isBlank()) {
-      throw new IllegalArgumentException("Idempotency-Key is required");
+      throw new MissingIdempotencyKeyException("Idempotency-Key is required");
     }
     return idempotencyKey.trim();
   }
@@ -57,11 +61,11 @@ public final class PaymentApplicationService {
   private PaymentAuthorization createAuthorization(
       String idempotencyKey, String commandFingerprint, AuthorizePaymentCommand command) {
     PaymentAuthorization authorization = new PaymentAuthorization(
-        "pay_" + UUID.randomUUID(),
+        tsidGenerator.newId(),
         command.orderId(),
         command.userSub(),
         command.amount(),
-        "AUTHORIZED",
+        PaymentStatus.AUTHORIZED,
         idempotencyKey,
         commandFingerprint,
         clock.instant());

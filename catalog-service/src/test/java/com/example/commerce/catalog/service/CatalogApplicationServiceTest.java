@@ -23,28 +23,35 @@ import com.example.commerce.security.ResourceAuthorizer;
 import com.example.commerce.security.ResourceRef;
 import com.example.commerce.security.ScopeAuthorizer;
 import com.example.commerce.security.SubjectRef;
+import com.example.commerce.web.pagination.CursorPaginator;
+import com.example.commerce.web.pagination.Page;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 class CatalogApplicationServiceTest {
 
   private static final ResourceRef MAIN_STORE = new ResourceRef("store", "main");
   private static final Permission MANAGE = new Permission("manage");
+  private static final String MUG_ID = "6801HWW000000";
+  private static final String BAG_ID = "6801HWW00YGJ3";
 
   @Test
   void lists_products_without_principal_or_authorization_checks() {
     RecordingAuthorizationClient authorizationClient = recordingClient(managerGrant());
     CatalogApplicationService service = service(repository(), authorizationClient);
 
-    List<Product> products = service.listProducts();
+    Page<Product> page = service.listProducts(null, null);
 
-    assertThat(products).extracting(product -> product.id().value())
-        .containsExactly("starter-mug", "travel-bag");
+    assertThat(page.items()).extracting(product -> product.id().value())
+        .containsExactly(MUG_ID, BAG_ID);
+    assertThat(page.nextCursor()).isNull();
     assertThat(authorizationClient.requests()).isEmpty();
   }
 
@@ -53,10 +60,97 @@ class CatalogApplicationServiceTest {
     RecordingAuthorizationClient authorizationClient = recordingClient(managerGrant());
     CatalogApplicationService service = service(repository(), authorizationClient);
 
-    Product product = service.getProduct(new ProductId("starter-mug"));
+    Product product = service.getProduct(new ProductId(MUG_ID));
 
     assertThat(product.name().value()).isEqualTo("Starter Mug");
     assertThat(authorizationClient.requests()).isEmpty();
+  }
+
+  @Test
+  void list_clamps_limit_above_max_and_over_fetches_by_one() {
+    RecordingProductRepository repository = repository();
+    CatalogApplicationService service = service(repository, recordingClient(managerGrant()));
+
+    service.listProducts(1000, null);
+
+    // resolveLimit clamps 1000 -> 100 (max), repository fetches 100 + 1 to detect a next page.
+    assertThat(repository.lastLimit()).isEqualTo(101);
+  }
+
+  @Test
+  void list_null_limit_falls_back_to_default_page_size() {
+    RecordingProductRepository repository = repository();
+    CatalogApplicationService service = service(repository, recordingClient(managerGrant()));
+
+    service.listProducts(null, null);
+
+    // default 20 + 1 over-fetch.
+    assertThat(repository.lastLimit()).isEqualTo(21);
+  }
+
+  @Test
+  void list_first_page_returns_next_cursor_when_more_rows_remain() {
+    CatalogApplicationService service = service(repositoryOf(seed(5)), recordingClient(managerGrant()));
+
+    Page<Product> page = service.listProducts(2, null);
+
+    assertThat(page.items()).extracting(product -> product.id().value())
+        .containsExactly("id-0", "id-1");
+    assertThat(page.nextCursor()).isEqualTo(CursorPaginator.encodeCursor("id-1"));
+  }
+
+  @Test
+  void list_following_cursor_returns_next_keyset_window() {
+    RecordingProductRepository repository = repositoryOf(seed(5));
+    CatalogApplicationService service = service(repository, recordingClient(managerGrant()));
+
+    Page<Product> page = service.listProducts(2, CursorPaginator.encodeCursor("id-1"));
+
+    assertThat(repository.lastAfterId()).isEqualTo("id-1");
+    assertThat(page.items()).extracting(product -> product.id().value())
+        .containsExactly("id-2", "id-3");
+  }
+
+  @Test
+  void list_malformed_cursor_decodes_to_first_page() {
+    RecordingProductRepository repository = repositoryOf(seed(5));
+    CatalogApplicationService service = service(repository, recordingClient(managerGrant()));
+
+    Page<Product> page = service.listProducts(2, "!!!not-base64!!!");
+
+    assertThat(repository.lastAfterId()).isNull();
+    assertThat(page.items()).extracting(product -> product.id().value())
+        .containsExactly("id-0", "id-1");
+  }
+
+  @Test
+  void list_last_page_has_null_next_cursor() {
+    CatalogApplicationService service = service(repositoryOf(seed(5)), recordingClient(managerGrant()));
+
+    Page<Product> page = service.listProducts(2, CursorPaginator.encodeCursor("id-2"));
+
+    assertThat(page.items()).extracting(product -> product.id().value())
+        .containsExactly("id-3", "id-4");
+    assertThat(page.nextCursor()).isNull();
+  }
+
+  @Test
+  void list_empty_repository_yields_empty_page_with_null_cursor() {
+    CatalogApplicationService service = service(repositoryOf(List.of()), recordingClient(managerGrant()));
+
+    Page<Product> page = service.listProducts(10, null);
+
+    assertThat(page.items()).isEmpty();
+    assertThat(page.nextCursor()).isNull();
+  }
+
+  @Test
+  void get_unknown_product_throws_product_not_found() {
+    CatalogApplicationService service = service(repository(), recordingClient(managerGrant()));
+
+    assertThatThrownBy(() -> service.getProduct(new ProductId("does-not-exist")))
+        .isInstanceOf(ProductNotFoundException.class)
+        .hasMessageContaining("does-not-exist");
   }
 
   @Test
@@ -112,7 +206,7 @@ class CatalogApplicationServiceTest {
 
     assertThatThrownBy(() -> service.updateProduct(
             principal("merchant", "catalog:write"),
-            new ProductId("starter-mug"),
+            new ProductId(MUG_ID),
             updateCommand()))
         .isInstanceOf(AuthorizationDeniedException.class)
         .hasMessageContaining("resource authorization denied");
@@ -127,25 +221,44 @@ class CatalogApplicationServiceTest {
     return new CatalogApplicationService(
         repository,
         new ScopeAuthorizer(),
-        new ResourceAuthorizer(authorizationClient));
+        new ResourceAuthorizer(authorizationClient),
+        new CursorPaginator(20, 100));
   }
 
   private static RecordingProductRepository repository() {
     return new RecordingProductRepository(List.of(
         new Product(
-            new ProductId("starter-mug"),
+            new ProductId(MUG_ID),
             new Sku("MUG-001"),
             new ProductName("Starter Mug"),
             Money.usd("12.50"),
             InventoryStatus.IN_STOCK,
             new StoreId("main")),
         new Product(
-            new ProductId("travel-bag"),
+            new ProductId(BAG_ID),
             new Sku("BAG-002"),
             new ProductName("Travel Bag"),
             Money.usd("48.00"),
             InventoryStatus.LOW_STOCK,
             new StoreId("main"))));
+  }
+
+  private static RecordingProductRepository repositoryOf(List<Product> products) {
+    return new RecordingProductRepository(products);
+  }
+
+  private static List<Product> seed(int count) {
+    List<Product> products = new ArrayList<>();
+    for (int i = 0; i < count; i++) {
+      products.add(new Product(
+          new ProductId("id-" + i),
+          new Sku("SKU-" + i),
+          new ProductName("Product " + i),
+          Money.usd("1.00"),
+          InventoryStatus.IN_STOCK,
+          new StoreId("main")));
+    }
+    return products;
   }
 
   private static CreateProductCommand createCommand() {
@@ -214,6 +327,8 @@ class CatalogApplicationServiceTest {
 
     private final Map<ProductId, Product> products = new LinkedHashMap<>();
     private int saveCount;
+    private int lastLimit;
+    private @Nullable String lastAfterId;
 
     private RecordingProductRepository(List<Product> initialProducts) {
       initialProducts.forEach(product -> products.put(product.id(), product));
@@ -222,6 +337,17 @@ class CatalogApplicationServiceTest {
     @Override
     public List<Product> findAll() {
       return List.copyOf(products.values());
+    }
+
+    @Override
+    public List<Product> findPage(@Nullable String afterId, int limit) {
+      this.lastAfterId = afterId;
+      this.lastLimit = limit;
+      return products.values().stream()
+          .sorted(Comparator.comparing(product -> product.id().value()))
+          .filter(product -> afterId == null || product.id().value().compareTo(afterId) > 0)
+          .limit(limit)
+          .toList();
     }
 
     @Override
@@ -238,6 +364,14 @@ class CatalogApplicationServiceTest {
 
     int saveCount() {
       return saveCount;
+    }
+
+    int lastLimit() {
+      return lastLimit;
+    }
+
+    @Nullable String lastAfterId() {
+      return lastAfterId;
     }
   }
 }

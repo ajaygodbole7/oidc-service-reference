@@ -11,6 +11,10 @@ const KEYCLOAK_AUTH_RE = new RegExp(
 const TOKEN_MATERIAL_RE =
   /access_token|refresh_token|id_token|[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}/i;
 
+// Canonical product TSID for the seeded "starter-mug" product (catalog now mints
+// TSIDs; ids are no longer human slugs).
+const STARTER_MUG_ID = "6801HWW000000";
+
 type FetchResult = { readonly status: number; readonly body: string };
 
 async function loginAs(page: Page, username: string, password: string = username): Promise<void> {
@@ -49,11 +53,12 @@ async function apiFetch(page: Page, path: string, init: RequestInit = {}): Promi
   );
 }
 
-function newProductBody(id: string): string {
+// The catalog POST no longer accepts a client-supplied product id; the server mints
+// the TSID and returns it in the response. `label` only seeds the sku/name.
+function newProductBody(label: string): string {
   return JSON.stringify({
-    id,
-    sku: `SKU-${id}`,
-    name: `Live ${id}`,
+    sku: `SKU-${label}`,
+    name: `Live ${label}`,
     price: 19.99,
     inventoryStatus: "IN_STOCK"
   });
@@ -72,7 +77,7 @@ test("SEC-CATALOG-ANONYMOUS-READ-ONLY: anonymous can read but cannot write", asy
   expect(list.status).toBe(200);
   expect(list.body).not.toMatch(TOKEN_MATERIAL_RE);
 
-  const detail = await apiFetch(page, "/api/catalog/products/starter-mug");
+  const detail = await apiFetch(page, `/api/catalog/products/${STARTER_MUG_ID}`);
   expect(detail.status).toBe(200);
   expect(detail.body).not.toMatch(TOKEN_MATERIAL_RE);
 
@@ -120,8 +125,12 @@ test("SEC-CATALOG-ANONYMOUS-READ-ONLY: merchant write succeeds with scope + stor
   expect(write.status).toBe(201);
   expect(write.body).not.toMatch(TOKEN_MATERIAL_RE);
 
+  // The server mints the product id; capture it from the create response.
+  const mintedId = (JSON.parse(write.body) as { id?: string }).id;
+  expect(typeof mintedId).toBe("string");
+
   // the newly created product is now anonymously readable through the catalog
-  const created = await apiFetch(page, "/api/catalog/products/merchant-live-product");
+  const created = await apiFetch(page, `/api/catalog/products/${mintedId}`);
   expect(created.status).toBe(200);
   expect(created.body).not.toMatch(TOKEN_MATERIAL_RE);
 });

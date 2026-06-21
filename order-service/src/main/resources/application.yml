@@ -10,6 +10,16 @@ management:
       exposure:
         include: health
 
+spring.application.name: order-service
+
+logging:
+  pattern:
+    correlation: "[${spring.application.name:},%X{traceId:-}] "
+
+commerce:
+  error:
+    base-url: https://errors.example.com/order
+
 order:
   oidc:
     issuer-uri: ${ORDER_OIDC_ISSUER_URI:http://keycloak:8080/realms/oidc-service-reference}
@@ -17,13 +27,18 @@ order:
     jwks-uri: ${ORDER_OIDC_JWKS_URI:http://keycloak:8080/realms/oidc-service-reference/protocol/openid-connect/certs}
   spicedb:
     target: ${ORDER_SPICEDB_TARGET:spicedb:50051}
-    preshared-key: ${SPICEDB_PRESHARED_KEY:LOCAL_DEV_SPICEDB_PRESHARED_KEY__CHANGE_BEFORE_DEPLOY}
+    # No dev default: order-service must fail at boot if the preshared key is unset, never ship a placeholder.
+    preshared-key: ${SPICEDB_PRESHARED_KEY}
     plaintext: ${ORDER_SPICEDB_PLAINTEXT:true}
   payment:
     authorize-uri: ${ORDER_PAYMENT_AUTHORIZE_URI:http://payment-service:8085/internal/payments/authorize}
     token-uri: ${ORDER_PAYMENT_TOKEN_URI:http://keycloak:8080/realms/oidc-service-reference/protocol/openid-connect/token}
     client-id: ${ORDER_PAYMENT_CLIENT_ID:order-service}
     client-secret: ${ORDER_PAYMENT_CLIENT_SECRET:LOCAL_DEV_SERVICE_CLIENT_SECRET__CHANGE_BEFORE_DEPLOY}
+    connect-timeout: ${ORDER_PAYMENT_CONNECT_TIMEOUT:3s}
+    read-timeout: ${ORDER_PAYMENT_READ_TIMEOUT:5s}
+    max-attempts: ${ORDER_PAYMENT_MAX_ATTEMPTS:3}
+    retry-backoff: ${ORDER_PAYMENT_RETRY_BACKOFF:200ms}
 
 spring:
   datasource:

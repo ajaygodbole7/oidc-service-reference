@@ -6,14 +6,17 @@ import com.example.commerce.catalog.service.CatalogApplicationService;
 import com.example.commerce.catalog.service.CreateProductCommand;
 import com.example.commerce.catalog.service.UpdateProductCommand;
 import com.example.commerce.security.CommercePrincipal;
+import com.example.commerce.web.tsid.TsidGenerator;
 import jakarta.validation.Valid;
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -21,14 +24,18 @@ import org.springframework.web.bind.annotation.RestController;
 class CatalogController {
 
   private final CatalogApplicationService service;
+  private final TsidGenerator tsidGenerator;
 
-  CatalogController(CatalogApplicationService service) {
+  CatalogController(CatalogApplicationService service, TsidGenerator tsidGenerator) {
     this.service = service;
+    this.tsidGenerator = tsidGenerator;
   }
 
   @GetMapping("/api/catalog/products")
-  ProductListResponse products() {
-    return ProductListResponse.from(service.listProducts());
+  ProductListResponse products(
+      @RequestParam(name = "limit", required = false) @Nullable Integer limit,
+      @RequestParam(name = "cursor", required = false) @Nullable String cursor) {
+    return ProductListResponse.from(service.listProducts(limit, cursor));
   }
 
   @GetMapping("/api/catalog/products/{productId}")
@@ -42,7 +49,7 @@ class CatalogController {
       @RequestAttribute("commercePrincipal") CommercePrincipal principal,
       @Valid @RequestBody CatalogRequest.CreateProduct request) {
     CreateProductCommand command = new CreateProductCommand(
-        new ProductId(request.id()),
+        new ProductId(tsidGenerator.newId()),
         request.skuValue(),
         request.nameValue(),
         request.priceValue(),
@@ -51,7 +58,7 @@ class CatalogController {
     return ProductResponse.from(service.createProduct(principal, command).product());
   }
 
-  @PatchMapping("/api/catalog/products/{productId}")
+  @PutMapping("/api/catalog/products/{productId}")
   ProductResponse updateProduct(
       @RequestAttribute("commercePrincipal") CommercePrincipal principal,
       @PathVariable String productId,

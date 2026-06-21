@@ -8,8 +8,12 @@ import java.util.Optional;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 
 /**
- * Postgres-backed {@link PaymentAuthorizationRepository}. The {@code idempotency_key} unique
- * constraint enforces payment-side dedup; the assigned {@code payment_id} drives insert vs update.
+ * Postgres-backed {@link PaymentAuthorizationRepository}. This repository is insert-only: a payment
+ * authorization is written exactly once and never updated, so {@link #save} always inserts (the row's
+ * version starts null). The {@code idempotency_key} unique constraint enforces payment-side dedup —
+ * a concurrent-create replay loses the insert race and surfaces as a duplicate-key conflict rather
+ * than a second authorization. The {@code @Version} column is present for a future update path; it is
+ * not exercised today because nothing updates an authorization.
  */
 public final class PostgresPaymentAuthorizationRepository implements PaymentAuthorizationRepository {
 
@@ -29,18 +33,14 @@ public final class PostgresPaymentAuthorizationRepository implements PaymentAuth
 
   @Override
   public PaymentAuthorization save(PaymentAuthorization authorization) {
-    PaymentRow row = toRow(authorization);
-    if (rows.existsById(authorization.paymentId())) {
-      aggregateTemplate.update(row);
-    } else {
-      aggregateTemplate.insert(row);
-    }
+    aggregateTemplate.save(toRow(authorization));
     return authorization;
   }
 
   private static PaymentRow toRow(PaymentAuthorization a) {
     return new PaymentRow(
         a.paymentId(),
+        null,
         a.orderId().value(),
         a.userSub(),
         a.amount().amount(),

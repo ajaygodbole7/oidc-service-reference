@@ -1,3 +1,13 @@
+spring:
+  application:
+    name: cart-service
+  datasource:
+    url: ${CART_DATASOURCE_URL:jdbc:postgresql://postgres:5432/cart_db}
+    username: ${CART_DATASOURCE_USERNAME:commerce}
+    password: ${CART_DATASOURCE_PASSWORD:LOCAL_DEV_POSTGRES_PASSWORD__CHANGE_BEFORE_DEPLOY}
+  flyway:
+    enabled: true
+
 server:
   port: ${SERVER_PORT:8083}
 
@@ -10,6 +20,14 @@ management:
       exposure:
         include: health
 
+logging:
+  pattern:
+    correlation: "[${spring.application.name:},%X{traceId:-}] "
+
+commerce:
+  error:
+    base-url: https://errors.example.com/cart
+
 cart:
   oidc:
     issuer-uri: ${CART_OIDC_ISSUER_URI:http://localhost:8080/realms/oidc-service-reference}
@@ -17,13 +35,7 @@ cart:
     jwks-uri: ${CART_OIDC_JWKS_URI:http://keycloak:8080/realms/oidc-service-reference/protocol/openid-connect/certs}
   spicedb:
     target: ${CART_SPICEDB_TARGET:spicedb:50051}
-    preshared-key: ${CART_SPICEDB_PRESHARED_KEY:LOCAL_DEV_SPICEDB_PRESHARED_KEY__CHANGE_BEFORE_DEPLOY}
+    # No literal default: an unset CART_SPICEDB_PRESHARED_KEY leaves the placeholder
+    # unresolved so binding fails at boot (fail-closed). Never ship a dev key default.
+    preshared-key: ${CART_SPICEDB_PRESHARED_KEY}
     plaintext: ${CART_SPICEDB_PLAINTEXT:true}
-
-spring:
-  datasource:
-    url: ${CART_DATASOURCE_URL:jdbc:postgresql://postgres:5432/cart_db}
-    username: ${CART_DATASOURCE_USERNAME:commerce}
-    password: ${CART_DATASOURCE_PASSWORD:LOCAL_DEV_POSTGRES_PASSWORD__CHANGE_BEFORE_DEPLOY}
-  flyway:
-    enabled: true

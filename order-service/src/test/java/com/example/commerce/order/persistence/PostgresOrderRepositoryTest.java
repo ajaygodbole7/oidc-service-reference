@@ -1,6 +1,7 @@
 package com.example.commerce.order.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.example.commerce.order.domain.CartId;
 import com.example.commerce.order.domain.IdempotencyKey;
@@ -110,5 +111,23 @@ class PostgresOrderRepositoryTest {
     assertThat(idempotencyRepository.find("alice", key)).get()
         .extracting(record -> record.orderId().value())
         .isEqualTo("order-idem-1");
+  }
+
+  @Test
+  void linkingADifferentOrderThanWasReservedThrows() {
+    IdempotencyKey key = new IdempotencyKey("idem-mismatch");
+    // The claim reserves order-reserved; the unique (subject, key) row records that id.
+    assertThat(idempotencyRepository.claim("alice", key, "fingerprint-mismatch", new OrderId("order-reserved")))
+        .isTrue();
+
+    // Linking a DIFFERENT order id than the one reserved must fail closed rather than silently
+    // overwriting the reservation: the recover-forward path must keep the same reserved id.
+    assertThatThrownBy(() -> idempotencyRepository.linkOrder("alice", key, new OrderId("order-other")))
+        .isInstanceOf(IllegalStateException.class);
+
+    // The reservation is unchanged after the rejected link.
+    assertThat(idempotencyRepository.find("alice", key)).get()
+        .extracting(record -> record.orderId().value())
+        .isEqualTo("order-reserved");
   }
 }

@@ -14,6 +14,7 @@ import com.example.commerce.order.domain.Order;
 import com.example.commerce.order.domain.OrderId;
 import com.example.commerce.order.domain.OrderLine;
 import com.example.commerce.order.domain.OrderRepository;
+import com.example.commerce.order.domain.OrderStatus;
 import com.example.commerce.order.domain.ProductId;
 import com.example.commerce.order.service.CartLookup;
 import com.example.commerce.order.service.CartSnapshot;
@@ -34,6 +35,8 @@ import com.example.commerce.security.ResourceAuthorizer;
 import com.example.commerce.security.ResourceRef;
 import com.example.commerce.security.ScopeAuthorizer;
 import com.example.commerce.security.SubjectRef;
+import com.example.commerce.web.error.CommerceErrorProperties;
+import com.example.commerce.web.error.GlobalExceptionHandler;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -52,7 +55,8 @@ class OrderWebErrorHandlingTest {
 
   private static final Instant NOW = Instant.parse("2026-06-20T00:00:00Z");
 
-  private final RecordingOrderRepository orderRepository = new RecordingOrderRepository(List.of(aliceOrder()));
+  private final RecordingOrderRepository orderRepository =
+      new RecordingOrderRepository(List.of(aliceOrder(), aliceCancelledOrder()));
   private final RecordingIdempotencyRepository idempotencyRepository = new RecordingIdempotencyRepository();
   private final OrderApplicationService service = new OrderApplicationService(
       orderRepository,
@@ -67,7 +71,7 @@ class OrderWebErrorHandlingTest {
       Clock.fixed(NOW, ZoneOffset.UTC));
   private final MockMvc mockMvc = MockMvcBuilders
       .standaloneSetup(new OrderController(service))
-      .setControllerAdvice(new RestExceptionHandler())
+      .setControllerAdvice(new GlobalExceptionHandler(errorProperties()))
       .setValidator(validator())
       .build();
 
@@ -92,8 +96,9 @@ class OrderWebErrorHandlingTest {
             .content(checkoutJson("pm-card-1")))
         .andExpect(status().isBadRequest())
         .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-        .andExpect(jsonPath("$.title").value("Invalid request"))
-        .andExpect(jsonPath("$.detail").value("idempotency key is required"));
+        .andExpect(jsonPath("$.title").value("Bad request"))
+        .andExpect(jsonPath("$.detail").value("idempotency key is required"))
+        .andExpect(jsonPath("$.errorCode").value("IDEMPOTENCY_KEY_REQUIRED"));
 
     assertThat(orderRepository.saveCount()).isZero();
   }
@@ -129,7 +134,8 @@ class OrderWebErrorHandlingTest {
             .content(checkoutJson("pm-card-2")))
         .andExpect(status().isConflict())
         .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-        .andExpect(jsonPath("$.title").value("Idempotency conflict"));
+        .andExpect(jsonPath("$.title").value("Conflict"))
+        .andExpect(jsonPath("$.errorCode").value("IDEMPOTENCY_CONFLICT"));
   }
 
   @Test
@@ -147,6 +153,69 @@ class OrderWebErrorHandlingTest {
             .requestAttr("commercePrincipal", principal("alice", "orders:write")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.status").value("CANCELLED"));
+  }
+
+  @Test
+  void get_unknown_order_returns_problem_json_404() throws Exception {
+    mockMvc.perform(get("/api/orders/missing-order")
+            .requestAttr("commercePrincipal", principal("alice", "orders:read")))
+        .andExpect(status().isNotFound())
+        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+        .andExpect(jsonPath("$.type").value("https://errors.example.com/order/order-not-found"))
+        .andExpect(jsonPath("$.title").value("Resource not found"))
+        .andExpect(jsonPath("$.detail").value("order not found: missing-order"))
+        .andExpect(jsonPath("$.errorCode").value("ORDER_NOT_FOUND"));
+  }
+
+  @Test
+  void cancel_unknown_order_returns_problem_json_404() throws Exception {
+    mockMvc.perform(post("/api/orders/missing-order/cancel")
+            .requestAttr("commercePrincipal", principal("alice", "orders:write")))
+        .andExpect(status().isNotFound())
+        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+        .andExpect(jsonPath("$.type").value("https://errors.example.com/order/order-not-found"))
+        .andExpect(jsonPath("$.title").value("Resource not found"))
+        .andExpect(jsonPath("$.detail").value("order not found: missing-order"))
+        .andExpect(jsonPath("$.errorCode").value("ORDER_NOT_FOUND"));
+
+    assertThat(orderRepository.saveCount()).isZero();
+  }
+
+  /**
+   * Cancelling an already-cancelled order is a state conflict, not a server fault. {@code
+   * Order.cancel()} throws {@link IllegalStateException} ("order already cancelled") by deliberate
+   * domain contract (see OrderDomainTest); the service layer translates that invariant into {@code
+   * OrderAlreadyCancelledException extends ConflictException}, so the starter advice renders a 409
+   * with the {@code order-already-cancelled} type. The domain stays free of any web-starter
+   * dependency.
+   */
+  @Test
+  void cancel_already_cancelled_order_returns_problem_json_409() throws Exception {
+    mockMvc.perform(post("/api/orders/alice-cancelled-order/cancel")
+            .requestAttr("commercePrincipal", principal("alice", "orders:write")))
+        .andExpect(status().isConflict())
+        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+        .andExpect(jsonPath("$.type").value("https://errors.example.com/order/order-already-cancelled"))
+        .andExpect(jsonPath("$.title").value("Conflict"))
+        .andExpect(jsonPath("$.detail").value("order already cancelled: alice-cancelled-order"))
+        .andExpect(jsonPath("$.errorCode").value("ORDER_ALREADY_CANCELLED"));
+  }
+
+  @Test
+  void checkout_invalid_body_returns_problem_json_400() throws Exception {
+    mockMvc.perform(post("/api/orders/checkout")
+            .requestAttr("commercePrincipal", principal("alice", "orders:write"))
+            .header("Idempotency-Key", "key-1")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(checkoutJson("")))
+        .andExpect(status().isBadRequest())
+        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+        .andExpect(jsonPath("$.type").value("https://errors.example.com/order/validation-failed"))
+        .andExpect(jsonPath("$.title").value("Invalid request"))
+        .andExpect(jsonPath("$.detail").value("request validation failed"))
+        .andExpect(jsonPath("$.errorCode").value("VALIDATION_FAILED"));
+
+    assertThat(orderRepository.saveCount()).isZero();
   }
 
   private static String checkoutJson(String paymentMethodId) {
@@ -168,6 +237,12 @@ class OrderWebErrorHandlingTest {
     return validator;
   }
 
+  private static CommerceErrorProperties errorProperties() {
+    CommerceErrorProperties properties = new CommerceErrorProperties();
+    properties.setBaseUrl("https://errors.example.com/order");
+    return properties;
+  }
+
   private static Order aliceOrder() {
     return Order.confirmed(
         new OrderId("alice-order"),
@@ -177,6 +252,18 @@ class OrderWebErrorHandlingTest {
         Money.usd("12.50"),
         "auth-alice-order",
         NOW);
+  }
+
+  private static Order aliceCancelledOrder() {
+    return new Order(
+        new OrderId("alice-cancelled-order"),
+        "alice",
+        new CartId("alice-cart"),
+        List.of(new OrderLine(new ProductId("starter-mug"), 1, Money.usd("12.50"))),
+        Money.usd("12.50"),
+        "auth-alice-cancelled-order",
+        NOW,
+        OrderStatus.CANCELLED);
   }
 
   private static final class RecordingOrderRepository implements OrderRepository {
