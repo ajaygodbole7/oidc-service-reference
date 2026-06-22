@@ -22,6 +22,27 @@ Every session must leave these sections populated:
 
 ## Current slice
 
+Frontend modernization + live-battery hardening — ACCEPTED + PUSHED 2026-06-22 (commits d9fe023,
+6e31f0e, 1e66e7a, 858f932). A human-directed slice beyond the PLAN build order. The React SPA was
+re-architected to TanStack Router (code-based, loaders + ensureQueryData, lazy routes, defaultPreload
+"intent") + TanStack Query (queryOptions factories, useSuspenseQuery, single QueryClient), shadcn/Radix
++ Tailwind v4 screens (catalog grid, product detail, cart), the React Compiler (via
+@rolldown/plugin-babel + reactCompilerPreset target 19 — manual memo removed), and React 19 Actions
+(useActionState sign-out); plus docs/frontend-bff-oidc-practices.md cataloguing the BFF/OIDC practices
+the SPA proves, and the Playwright e2e rewritten to the new routes (all 15 SEC-* titles +
+assertNoBrowserTokens preserved). The token boundary held (architecture.test.ts +
+eslint-boundary.test.ts + ARCH-FE-TOKEN-BOUNDARY green). The live battery then caught TWO real
+regressions the unit/static gates could not, both fixed + re-verified live: (1) the SecretSentinel boot
+guard (from 6b9905d) aborted cart-service under the cart live harness's `test-fixture` profile, which
+was missing from the local-profile allow-list (fixed 6e31f0e); (2) the FE catalog model (carried from
+the old App.tsx) required `description` and lowercase inventoryStatus, but the catalog API has no
+`description` and serializes the UPPERCASE enum, so every live product failed validation ("Catalog
+response had an unexpected shape", fixed 1e66e7a). Plus two backend follow-ups the battery surfaced:
+catalog-service now maps a duplicate SKU to 409 (was 500) and the catalog live harness cleans up its
+test products (fixed 858f932). Full live battery green end-to-end: `sh scripts/verify-live-all.sh` EXIT
+0, all 17 SEC-* + every Playwright spec, on a pristine DB after freeing host disk (prune --volumes ->
+TRIM 4.2 -> 8.1 GiB).
+
 Boot4-inspired hardening + RFC 9457 filter unification — ACCEPTED + PUSHED 2026-06-21 (commits
 40f2170, 60ce1e5). After the PLAN build order completed, a quality pass mined `../boot4-reference`: a
 shared `commerce-web-starter` (auto-configured RFC 9457 GlobalExceptionHandler, TsidGenerator, keyset
@@ -96,7 +117,14 @@ and the known review/sync findings are CLOSED:
 - cart and order `CommercePrincipalFilter` have the invalid_token reject-branch test, via the
   `CartTokenValidator`/`OrderTokenValidator` SAM seam catalog already had.
 
-Next work is a new vertical slice per PLAN, on human direction. No outstanding review/sync findings.
+Next work is a new vertical slice per PLAN, on human direction. No outstanding review/sync findings;
+the 2026-06-22 frontend modernization, the two live-battery regressions (SecretSentinel test-fixture,
+FE catalog model), and the two backend follow-ups (catalog 409, harness cleanup) are all done, pushed,
+and proven by a full green live battery. Candidate human-directed slices, within the teaching scope
+(NOT the documented-not-built prod hardening — mTLS/SPIFFE, mesh, RFC 8693 token exchange, OpenFGA):
+(a) checkout + cart-mutation React 19 Actions in the new FE — docs/frontend-bff-oidc-practices.md flags
+that useOptimistic + write Actions are not yet exercised (screens are read-only); (b) order-history /
+merchant catalog-management screens (PLAN Product section; the order/catalog backend APIs already exist).
 
 The live SEC harnesses are collapsed into one orchestrated command,
 `scripts/verify-live-all.sh` (the live counterpart to the static `verify-all.sh`): it brings
@@ -183,6 +211,29 @@ watched runs:
       verification remains open.)
 
 ## Verifier status
+
+Frontend modernization + live-battery hardening accepted 2026-06-22:
+
+```sh
+# frontend (no Docker)
+cd frontend && corepack pnpm run verify          # eslint + tsc + vitest 57/57 + build + bundle
+corepack pnpm exec playwright test --list        # 20 specs across 5 files parse
+# backend regression / follow-up unit gates
+auth-service/mvnw -pl commerce-security-common,order-service -am \
+  -Dtest=SecretSentinelTest,SecretSentinelGuardTest clean test   # 6/6 + 5/5
+auth-service/mvnw -pl catalog-service -am -Dtest=PostgresProductRepositoryTest clean test  # 7/7
+# full live battery (cold, pristine DB, ~8.1 GiB free at launch)
+sh scripts/verify-live-all.sh
+```
+
+Result: PASS. `verify-live-all.sh` EXIT 0 — all 17 SEC-* gates green (cart 11, catalog
+SEC-CATALOG-ANONYMOUS-READ-ONLY incl. merchant-write 201 on the clean DB, order/payment 5) and every
+Playwright spec passed; no brick (ended ~2.0 GiB). The run validated the FE catalog-model fix live (no
+more "unexpected shape") and the SecretSentinel test-fixture fix (cart-service booted under
+`test-fixture`). The catalog 409 fix is proven by a Testcontainers test
+(PostgresProductRepositoryTest.insertWithDuplicateSkuThrowsConflict); the harness cleanup passes
+`sh -n`. `SEC-NO-BROWSER-TOKENS` was validated separately green earlier the same day. pnpm verify ran
+57 frontend tests; bundle within budget; the SPA token-boundary gates stayed green.
 
 Platform verification sub-slice accepted 2026-06-20 20:01 PDT:
 
@@ -559,11 +610,14 @@ verification.
 
 ## Blockers
 
-- Host disk tight but currently recovered: after the 2026-06-20 full live trace run,
-  `sh scripts/down.sh`, `docker builder prune -af`, and `docker image prune -af` left
-  Docker with 0B images/containers/cache and `/System/Volumes/Data` at about 9.0 GiB free.
-  Do not run full-stack rebuilds casually; check disk first, prefer skip-up/no-build modes,
-  and prune after live gates.
+- Host disk remains the dominant constraint (Mac ~99% full). The 2026-06-22 session BRICKED once at
+  ENOSPC (~265 MiB free) mid-battery and recovered via `docker system prune -af` + VM TRIM. Reliable
+  recipe before a full live run: `docker system prune -af --volumes` (also yields a pristine DB), then
+  WAIT for the host to TRIM back up (it climbed 4.2 -> 8.1 GiB over ~5 min) BEFORE launching — a cold
+  full battery needs ~6-7 GiB and ends ~2 GiB. After the run: `sh scripts/down.sh` + prune. Prefer the
+  per-service SKIP_UP harnesses against an already-running stack when iterating. A transient Docker Hub
+  404 on `eclipse-temurin:26-*` also occurred this session; re-pulling cleared it. After the accepted
+  run the stack is down; disk was ~3.2 GiB and still TRIM-recovering.
 - Local shell has Node 24.12.0; `frontend/package.json` pins Node 26.3.0, so pnpm emits
   an engine warning until Node is switched.
 - Harness evidence belongs in verifier output, tests, scripts, and `PROGRESS.md`.
@@ -575,17 +629,19 @@ verification.
 
 ## Session handoff
 
-All PLAN slices are accepted, platform verification + documentation are complete, AND a
-boot4-inspired hardening + RFC 9457 filter-401 unification pass shipped on top (commits 40f2170,
-60ce1e5; pushed; full acceptance green). The stack is torn down and the build cache pruned. The next
-loop is NOT a new feature: (1) the doc-vs-code sync (see Exact next action) — the docs lagged the
-hardening commits, and `docs/production-hardening.md` FALSELY lists `@Version`/optimistic-lock as "not
-built"; (2) a real code defect the sync found — catalog-service ships a dev SpiceDB preshared-key
-default, unlike cart/order's fail-closed no-default; (3) the verification-parity gaps (a
-commerce-web-starter verify gate; architecture-gate coverage of the starter; the invalid_token
-reject-branch test in cart + order). Keep the four gates visible in code and traces; Postgres owner
-columns and TSID ids are not authorization. ArchUnit/NullAway/PIT were considered and declined as
-reference-overkill.
+All PLAN slices are accepted; platform verification + documentation are complete; the boot4-inspired
+hardening + RFC 9457 unification (40f2170, 60ce1e5) and all four staff-review findings (6b9905d) are
+closed; and on 2026-06-22 a human-directed frontend-modernization slice shipped (TanStack Router+Query,
+shadcn/Radix, React Compiler + R19 Actions, OIDC practice docs, e2e rewrite — d9fe023) along with the
+two regressions the live battery caught (SecretSentinel test-fixture 6e31f0e, FE catalog model 1e66e7a)
+and two backend follow-ups (catalog 409 + harness cleanup 858f932). All pushed; full live battery green
+(verify-live-all EXIT 0, 17 SEC-*); stack torn down. There is NO queued slice — the reference is
+feature-complete and FE-modernized with zero outstanding findings. The next loop is a new feature on
+human direction; the grounded candidates are in Exact next action (checkout/cart-mutation Actions;
+order-history / merchant catalog-management screens). Keep the four gates visible in code and traces;
+Postgres owner columns and TSID ids are not authorization. Always free + TRIM host disk before a full
+live run (see Blockers — it bricked once this session). ArchUnit/NullAway/PIT were considered and
+declined as reference-overkill.
 
 ## Session log
 
@@ -968,3 +1024,40 @@ Append-only, timestamped chronology (newest at the bottom); captures non-commit 
   `verify-catalog/cart/order` all pass. Proved both new guards bite: a starter service-import fails
   `ARCH-STARTER-GENERIC`; an unset catalog preshared-key fails the fail-closed boot (`@NotBlank`
   rejected value [null]). Teeth-proofs reverted clean.
+- 2026-06-22 — Claude — shipped a human-directed frontend-modernization slice (beyond the PLAN build
+  order). Re-architected the SPA to TanStack Router (code-based, createRootRouteWithContext, loaders +
+  ensureQueryData, lazy routes, defaultPreload "intent"/staleTime 0) + TanStack Query (queryOptions
+  factories, useSuspenseQuery, single QueryClient, AbortSignal threading), shadcn/Radix + Tailwind v4
+  screens (catalog grid, product detail, cart), the React Compiler (via @rolldown/plugin-babel +
+  reactCompilerPreset target 19 — manual memo removed, since plugin-react v6 transforms with oxc and
+  has no `babel` key), and React 19 Actions (useActionState sign-out). Added
+  docs/frontend-bff-oidc-practices.md and rewrote the Playwright e2e to the new routes (all 15 SEC-*
+  titles + assertNoBrowserTokens preserved). Token boundary held: architecture.test.ts +
+  eslint-boundary.test.ts + ARCH-FE-TOKEN-BOUNDARY green; pnpm verify 57/57 + build + bundle in budget;
+  playwright --list 20 specs. Committed + pushed d9fe023.
+- 2026-06-22 — Claude — ran the full live battery to validate the e2e rewrite; it BRICKED once at
+  ENOSPC (~265 MiB) on a 99%-full Mac, recovered via `docker system prune -af` + VM TRIM, and a
+  transient Docker Hub 404 on `eclipse-temurin:26-*` was cleared by re-pulling. The battery then caught
+  TWO real regressions the unit/static gates could not. (1) The SecretSentinel boot guard (from
+  6b9905d) aborted cart-service under the cart live harness's `test-fixture` profile — `test-fixture`
+  was missing from SecretSentinel.LOCAL_PROFILES {local,dev,test}; added it (warn, not fail) + locked
+  with SecretSentinelTest (6/6) and the order SecretSentinelGuardTest (5/5). Committed + pushed 6e31f0e.
+  (2) The FE catalog model (carried unchanged from the old App.tsx) required `description` and lowercase
+  inventoryStatus, but the catalog ProductResponse has no `description`/`imageUrl` and serializes the
+  UPPERCASE enum (IN_STOCK/...), so every live product failed isCatalogProduct ("Catalog response had
+  an unexpected shape"). Aligned the model (uppercase status, optional description, added sku), guarded
+  the screens, updated fixtures + the cart.spec mock; pnpm verify 57/57. Committed + pushed 1e66e7a.
+- 2026-06-22 — Claude — fixed the two backend follow-ups the battery surfaced. (1) catalog-service
+  returned 500 on a duplicate SKU; PostgresProductRepository.save now catches Postgres's
+  DuplicateKeyException for products_sku_key and throws the shared ConflictException (slug
+  "duplicate-sku") -> 409, mirroring order's PostgresIdempotencyRepository; proven by
+  PostgresProductRepositoryTest.insertWithDuplicateSkuThrowsConflict (Testcontainers, 7/7). (2) the
+  catalog live harness left its merchant product in the persistent volume (a re-run hit the duplicate
+  conflict); it now deletes test products (sku LIKE 'SKU-%'; the seed uses TYPE-NNN) before the
+  Playwright run, mirroring the cart harness's DELETE-non-alice/bob-carts. Committed + pushed 858f932.
+  Then freed host disk (`docker system prune -af --volumes` -> pristine DB; waited for the VM to TRIM
+  4.2 -> 8.1 GiB) and ran the FULL live battery cold: `sh scripts/verify-live-all.sh` EXIT 0 — all 17
+  SEC-* gates green (cart 11, catalog incl. merchant-write 201, order/payment 5) and every Playwright
+  spec passed, no brick (ended ~2.0 GiB). Tore the stack down; disk recovering via TRIM (~3.2 GiB).
+  Reference is feature-complete + FE-modernized with zero outstanding findings; next slice is
+  human-directed.
