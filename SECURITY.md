@@ -15,9 +15,10 @@ Auth Service runs `SecretSentinelValidator` at startup: it refuses to boot when 
 replaces every secret, and this boot check fails closed if a placeholder is left in a non-local
 configuration.
 
-Cart Service and Order Service demonstrate a stronger rule for the SpiceDB preshared key: it has
-no default at all. `CartProperties` and `OrderProperties` mark the key `@NotBlank` with no fallback
-value (config binds it from `CART_SPICEDB_PRESHARED_KEY` and `SPICEDB_PRESHARED_KEY`), so an unset
+The SpiceDB-backed services (Cart, Order, and Catalog) demonstrate a stronger rule for the SpiceDB
+preshared key: it has no default at all. `CartProperties`, `OrderProperties`, and `CatalogProperties`
+mark the key `@NotBlank` with no fallback value (config binds it from `CART_SPICEDB_PRESHARED_KEY`,
+`SPICEDB_PRESHARED_KEY`, and `CATALOG_SPICEDB_PRESHARED_KEY`), so an unset
 key fails validation and the context refuses to start, unconditionally, rather than silently
 shipping a dev key. There is no loopback or sentinel condition on this check: the key must be
 supplied or the service does not boot.

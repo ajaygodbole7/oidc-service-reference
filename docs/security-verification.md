@@ -50,6 +50,8 @@ regression fails the build without a running stack:
 - `ARCH-DOMAIN-PURE-*`, `ARCH-WEB-NO-PERSISTENCE-*`, `ARCH-GATES-AT-SERVICE-*` per service.
 - `ARCH-GATE-SCOPE-PRESENT-*` and `ARCH-GATE-RESOURCE-PRESENT-*`: cart, catalog, and order must
   invoke both the scope and resource gates.
+- `ARCH-STARTER-GENERIC`: the shared `commerce-web-starter` module imports no service package, so it
+  stays reusable across all services.
 - `ARCH-FE-*`: the SPA token boundary (no token names, no `Authorization` header, no direct IdP
   calls, no auth-state storage writes).
 
