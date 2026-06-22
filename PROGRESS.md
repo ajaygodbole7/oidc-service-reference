@@ -83,26 +83,20 @@ business-flows, security-verification, threat-model, production-hardening), and 
 (which resolves the previously dangling `scripts/up.sh` reference). All are doc/code-synced and
 clean (zero em-dashes, no marketing/slop), checked by a consolidated grep gate.
 
-All seven PLAN build-order items are done, AND a boot4-inspired hardening + RFC 9457 filter-401
-unification pass shipped on top (commits 40f2170, 60ce1e5; pushed; full acceptance green). The next
-work is NOT new features:
-1. Doc-vs-code sync — the hardening slice shipped without updating the docs. Highest impact:
-   `docs/production-hardening.md` FALSELY lists `@Version`/optimistic-locking as "a production
-   deployment adds" but it is BUILT on cart/order/payment (move it to built; keep the orphan-tuple
-   reconciliation job as deferred). The 2nd shared module `commerce-web-starter` is absent from
-   PLAN.md's module tree + "Shared Security Module", AGENTS.md stack/conventions, and
-   `docs/architecture.md`. TSID ids + cursor pagination + RFC 9457 ProblemDetail are undocumented
-   (README / PLAN / domain-modeling / security docs). PLAN says catalog update is PATCH (it is PUT)
-   and still lists a deleted `RestExceptionHandler.java`. `docs/security-verification.md` lists
-   `SEC-NO-BROWSER-TOKENS` in the live battery (it runs in e2e; the backend live battery is 17 cases).
-2. A real CODE defect found during the sync: catalog-service ships a literal dev SpiceDB
-   preshared-key default (`CatalogProperties.java`, `application.yml`), breaking the fail-closed
-   no-default secret pattern cart/order enforce. Fix catalog to match.
-3. Verification parity the hardening slice opened: add `scripts/verify-commerce-web-starter.sh`
-   (wired into `verify-all.sh`); extend `verify-architecture.sh` to cover the starter module; add the
-   `invalid_token` reject-branch assertion to cart + order `CommercePrincipalFilterTest` (only catalog
-   has it).
-4. Then the next vertical slice per PLAN.
+All seven PLAN build-order items are done, plus a boot4-inspired hardening + RFC 9457 filter-401
+unification pass (commits 40f2170, 60ce1e5), the doc-vs-code sync (f62f28c), and all four
+staff-review findings (6b9905d) — all pushed, full acceptance green. The reference is feature-complete
+and the known review/sync findings are CLOSED:
+- Docs match code (PLAN/AGENTS/README/SECURITY/docs/* reconciled; `docs/production-hardening.md` no
+  longer falsely lists `@Version`/TSID as deferred).
+- catalog-service fails closed on an unset SpiceDB preshared key (no default, `@NotBlank`), matching
+  cart/order; proven by a teeth check (no key -> context fails to boot).
+- `commerce-web-starter` has its own verify gate (`scripts/verify-commerce-web-starter.sh`, wired into
+  `verify-all.sh`) and an `ARCH-STARTER-GENERIC` layering assertion in `verify-architecture.sh`.
+- cart and order `CommercePrincipalFilter` have the invalid_token reject-branch test, via the
+  `CartTokenValidator`/`OrderTokenValidator` SAM seam catalog already had.
+
+Next work is a new vertical slice per PLAN, on human direction. No outstanding review/sync findings.
 
 The live SEC harnesses are collapsed into one orchestrated command,
 `scripts/verify-live-all.sh` (the live counterpart to the static `verify-all.sh`): it brings
@@ -959,3 +953,18 @@ Append-only, timestamped chronology (newest at the bottom); captures non-commit 
   TSID/@Version "not built" claims), the catalog-service dev preshared-key default (a real fail-closed
   gap vs cart/order), and the verification-parity gaps. Declined ArchUnit/NullAway/PIT/CVE-scanners
   (user call) as overkill for a teaching reference.
+- 2026-06-21 — Claude — fixed all four staff-review findings (commit 6b9905d, pushed). (1) catalog
+  fail-closed: dropped the `CatalogProperties` compact-constructor preshared-key default-fill and the
+  `application.yml` fallback, added a test-resource key so the `@SpringBootTest` context still boots;
+  an unset `CATALOG_SPICEDB_PRESHARED_KEY` now fails `@NotBlank` at boot like cart/order. (2) added
+  `scripts/verify-commerce-web-starter.sh` (reactor `-pl ... -am` since the starter depends on
+  commerce-security-common), wired into `verify-all.sh`. (3) `verify-architecture.sh` gained
+  `ARCH-STARTER-GENERIC` (the starter imports no service package). (4) cart + order
+  `CommercePrincipalFilter` got the `CartTokenValidator`/`OrderTokenValidator` SAM seam (production
+  adapts the final `CommerceJwtValidator` via a method ref) plus an invalid-token reject-branch test
+  each. Diagnosed a spurious red first: Docker Desktop had quit, so every `@SpringBootTest` +
+  Testcontainers test errored with "Could not find a valid Docker environment" (not a code fault).
+  Restarted Docker, re-ran green: `verify-architecture` + `verify-commerce-web-starter` +
+  `verify-catalog/cart/order` all pass. Proved both new guards bite: a starter service-import fails
+  `ARCH-STARTER-GENERIC`; an unset catalog preshared-key fails the fail-closed boot (`@NotBlank`
+  rejected value [null]). Teeth-proofs reverted clean.
