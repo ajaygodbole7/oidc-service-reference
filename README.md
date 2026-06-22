@@ -62,6 +62,20 @@ order ──► payment         server-to-server, client-credentials, aud=paymen
 Payment Service has no browser route. Order Service calls it server-to-server with a
 client-credentials token whose `aud=payment-service`, never a user token.
 
+## API contract
+
+**Cursor pagination.** The catalog list is keyset-paginated:
+`GET /api/catalog/products?cursor=&limit=`. `limit` defaults to 20 and is capped; the response
+returns the items plus a `nextCursor` (null on the last page). The cursor is an opaque base64url
+of the last row's sortable TSID id; hand it back as the next `cursor`. A blank or malformed
+cursor reads as the first page, never an error.
+
+**Errors.** Every service returns RFC 9457 ProblemDetail (`application/problem+json`): a `type`
+URI built from a per-error slug, plus `title`, `status`, `detail`, and the `errorCode`, `traceId`
+(from the request trace), and `timestamp` extensions. A 403 carries the safe scope reason only;
+the SpiceDB decision trace is logged server-side, never in the body. The gateway-filter 401
+carries the same shape as a controller-raised error.
+
 ## Running locally
 
 Prerequisites: Docker, Node 26.3.0, pnpm 11.7.0, curl.

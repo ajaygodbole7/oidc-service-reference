@@ -22,6 +22,20 @@ the request path, and the trust boundaries. The ladder is detailed in
 Keycloak, Valkey, Postgres, and APISIX are swappable vendors; application code never branches on
 the brand.
 
+Two shared modules are compiled into the four domain services rather than run as their own
+processes:
+
+| Module | Provides |
+| --- | --- |
+| `commerce-security-common` | The four-gate primitives: `CommercePrincipal`, the Nimbus JWT validation, `ScopeAuthorizer`, `ResourceAuthorizer`, and the `AuthorizationClient` over SpiceDB. |
+| `commerce-web-starter` | A Spring Boot auto-configured starter (`CommerceWebAutoConfiguration`) for the cross-cutting web concerns: the single RFC 9457 `GlobalExceptionHandler`, the sealed `ApiException` hierarchy, `ProblemDetailFactory`/`ProblemDetailWriter`, `TsidGenerator`, the keyset `CursorPaginator`/`Page`, and `TraceIdFilter`. |
+
+The error contract across every service is RFC 9457 ProblemDetail (`application/problem+json`): a
+`type` URI built from the per-error slug, plus `title`, `status`, `detail`, and the shared
+`errorCode`, `traceId`, and `timestamp` extensions. Both the controller advice and the auth
+filters build it through the same `ProblemDetailFactory`, so an advice-emitted and a
+filter-emitted response carry the same shape.
+
 ## Request path
 
 A browser request to a protected endpoint:

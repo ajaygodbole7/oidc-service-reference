@@ -29,4 +29,4 @@ mvn -f payment-service/pom.xml clean test
 - Treat `userSub` as command data from Order Service, not as direct user proof.
 - Require `Idempotency-Key`; same key and same body returns the same authorization, same
   key and different body fails before any new authorization is created.
-- Keep persistence in-memory until the Postgres slice.
+- Persistence is Spring Data JDBC over Postgres (the persistence slice is done).

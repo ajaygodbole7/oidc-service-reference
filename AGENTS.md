@@ -35,9 +35,14 @@ frontend shell, test harness), then add domain services + resource authorization
 - **S2S = client-credentials + structured command** (order→payment), separate
   `payment-service` audience. Payment authorizes the *caller* and trusts `userSub` as data;
   RFC 8693 token exchange is the documented future upgrade for cryptographic user provenance.
-- **Stack = Java 26 / Spring Boot 4.1.0**, all services. Small shared `commerce-security-common`
-  (five primitives: `CommercePrincipal`, JWT validator, `ScopeAuthorizer`,
-  `ResourceAuthorizer`, `DecisionTrace`) — **just enough, NOT a framework.**
+- **Stack = Java 26 / Spring Boot 4.1.0**, all services. Two small shared modules, each
+  **just enough, NOT a framework**: `commerce-security-common` (five primitives:
+  `CommercePrincipal`, JWT validator, `ScopeAuthorizer`, `ResourceAuthorizer`,
+  `DecisionTrace`) and `commerce-web-starter` (auto-configured web cross-cutting:
+  one RFC 9457 `GlobalExceptionHandler` over a sealed `ApiException` hierarchy,
+  `TsidGenerator`, keyset `CursorPaginator` + `Page`, `TraceIdFilter`). All four services
+  depend on the web starter; per-service `RestExceptionHandler` is gone and domain
+  exceptions extend the shared bases.
 - **Versions = latest stable, then exact pins.** Use `PLAN.md`'s version table as the
   starting contract. No floating Docker `latest` tags, npm ranges, or unrecorded tool
   bumps. If upstream has moved before scaffold starts, refresh the table first; after
@@ -49,6 +54,17 @@ frontend shell, test harness), then add domain services + resource authorization
 - **Substrate = Docker Compose.** Prod-only infra (mTLS/SPIFFE, mesh, event bus, k8s,
   multi-region) is **documented hardening, not built.**
 - Keycloak local = PingFederate stand-in; Cognito = documented scope-profile adapter.
+- **Conventions (all from `commerce-web-starter`, do not re-implement per service):**
+  errors are RFC 9457 `application/problem+json` from one `GlobalExceptionHandler` over
+  the sealed `ApiException` hierarchy (404/409/422/400/503); storage ids are 13-char
+  Crockford base32 TSIDs minted server-side by `TsidGenerator`, with `*Id` value types over
+  `VARCHAR` columns; list endpoints are keyset cursor-paginated (`limit` + opaque `cursor`,
+  returning items + `nextCursor`).
+- **Optimistic locking.** Cart/order/payment aggregates carry `@Version`; concurrent writes
+  surface as 409.
+- **Config = typed validated `@ConfigurationProperties` per service.** The SpiceDB preshared
+  key has NO default: a missing `*_SPICEDB_PRESHARED_KEY` fails closed at boot (proven by
+  cart + order), never a placeholder.
 
 ## How to build (`PLAN.md` → "Build sequence")
 Vertical slice first: scaffold the BFF front-door + SpiceDB + `commerce-security-common`,

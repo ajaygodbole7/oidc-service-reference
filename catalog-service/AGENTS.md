@@ -26,7 +26,8 @@ JAVA_HOME=$HOME/.sdkman/candidates/java/26-amzn mvn -f pom.xml -pl catalog-servi
 - Write use cases orchestrate the visible gates: `ScopeAuthorizer` before
   `ResourceAuthorizer`, then domain mutation.
 - The write resource is `store:main`; the required permission is `manage`.
-- Repositories stay in-memory until the dedicated Postgres persistence slice.
+- Repositories are Spring Data JDBC over Postgres (the persistence slice is done); the
+  in-memory repository remains as a fast unit-test/dev fixture.
 - Do not parse JWTs, inspect bearer strings, or call the SpiceDB SDK in this module.
 
 ## Security contract / SEC-* cases proven here

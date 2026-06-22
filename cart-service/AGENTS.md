@@ -25,7 +25,8 @@ JAVA_HOME=$HOME/.sdkman/candidates/java/26-amzn mvn -f pom.xml -pl cart-service 
   `ResourceAuthorizer`, then domain mutation/read.
 - `GET /api/cart` resolves the caller's cart id from the server-side subject, but that
   ownership lookup never replaces the SpiceDB check.
-- Repositories stay in-memory until the first cart ladder is proven live.
+- Repositories are Spring Data JDBC over Postgres (the persistence slice is done);
+  `InMemoryCartRepository` remains as a fast unit-test/dev fixture.
 - Do not parse JWTs, inspect bearer strings, or call the SpiceDB SDK in this module.
 
 ## Security contract / SEC-* cases proven here

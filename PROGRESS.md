@@ -22,7 +22,18 @@ Every session must leave these sections populated:
 
 ## Current slice
 
-Complete platform verification — IN PROGRESS. The one-command live orchestrator exists and
+Boot4-inspired hardening + RFC 9457 filter unification — ACCEPTED + PUSHED 2026-06-21 (commits
+40f2170, 60ce1e5). After the PLAN build order completed, a quality pass mined `../boot4-reference`: a
+shared `commerce-web-starter` (auto-configured RFC 9457 GlobalExceptionHandler, TsidGenerator, keyset
+CursorPaginator, TraceIdFilter, sealed ApiException hierarchy, ProblemDetailWriter) adopted by all four
+services; TSID storage ids; `@Version` optimistic locking (cart threads the version through the domain;
+order reload-converge for recover-forward; payment insert-only); catalog cursor pagination (default 20,
+capped); typed validated `@ConfigurationProperties` + fail-closed SpiceDB preshared-key; order S2S
+connect/read timeouts + transient-only retry + datasource-proxy N+1 guard; payment status enum; catalog
+PATCH->PUT; full repository Testcontainers coverage + full endpoint RFC 9457 test coverage; filter-401s
+emit the full RFC 9457 shape. Full acceptance green (verify-all + verify-live-all 17 SEC + verify-frontend).
+
+Complete platform verification — COMPLETE. The one-command live orchestrator exists and
 is green. `SEC-SPICEDB-UNAVAILABLE` is accepted as a live cart gate, and
 `SEC-SECURITY-TRACE-EVIDENCE` is now accepted as harness-only Security Trace evidence:
 watched runs proved APISIX propagates a bounded `X-Trace-Id`, the local cart fixture
@@ -72,9 +83,26 @@ business-flows, security-verification, threat-model, production-hardening), and 
 (which resolves the previously dangling `scripts/up.sh` reference). All are doc/code-synced and
 clean (zero em-dashes, no marketing/slop), checked by a consolidated grep gate.
 
-All seven items in PLAN's build order are now done; the reference is feature-complete. The only
-remaining step is a final full acceptance run on a clean stack when wanted: `scripts/verify-all.sh`
-(static) plus `scripts/verify-frontend.sh` and `scripts/verify-live-all.sh` (live).
+All seven PLAN build-order items are done, AND a boot4-inspired hardening + RFC 9457 filter-401
+unification pass shipped on top (commits 40f2170, 60ce1e5; pushed; full acceptance green). The next
+work is NOT new features:
+1. Doc-vs-code sync — the hardening slice shipped without updating the docs. Highest impact:
+   `docs/production-hardening.md` FALSELY lists `@Version`/optimistic-locking as "a production
+   deployment adds" but it is BUILT on cart/order/payment (move it to built; keep the orphan-tuple
+   reconciliation job as deferred). The 2nd shared module `commerce-web-starter` is absent from
+   PLAN.md's module tree + "Shared Security Module", AGENTS.md stack/conventions, and
+   `docs/architecture.md`. TSID ids + cursor pagination + RFC 9457 ProblemDetail are undocumented
+   (README / PLAN / domain-modeling / security docs). PLAN says catalog update is PATCH (it is PUT)
+   and still lists a deleted `RestExceptionHandler.java`. `docs/security-verification.md` lists
+   `SEC-NO-BROWSER-TOKENS` in the live battery (it runs in e2e; the backend live battery is 17 cases).
+2. A real CODE defect found during the sync: catalog-service ships a literal dev SpiceDB
+   preshared-key default (`CatalogProperties.java`, `application.yml`), breaking the fail-closed
+   no-default secret pattern cart/order enforce. Fix catalog to match.
+3. Verification parity the hardening slice opened: add `scripts/verify-commerce-web-starter.sh`
+   (wired into `verify-all.sh`); extend `verify-architecture.sh` to cover the starter module; add the
+   `invalid_token` reject-branch assertion to cart + order `CommercePrincipalFilterTest` (only catalog
+   has it).
+4. Then the next vertical slice per PLAN.
 
 The live SEC harnesses are collapsed into one orchestrated command,
 `scripts/verify-live-all.sh` (the live counterpart to the static `verify-all.sh`): it brings
@@ -553,14 +581,17 @@ verification.
 
 ## Session handoff
 
-The scaffold, authorization-substrate, cart vertical slice, dynamic cart ownership
-provisioning, catalog vertical slice, order/payment vertical slice, and Postgres persistence
-slice are accepted locally. Platform verification is in progress; `SEC-SPICEDB-UNAVAILABLE`
-and `SEC-SECURITY-TRACE-EVIDENCE` are accepted and included in `verify-live-all.sh`. The
-stack has been torn down and Docker images/build cache pruned after the accepted run. Next
-recommended loop is architecture gates for controller/service/domain/persistence/security
-boundaries, not another persistence migration and not a diagnostics console. Keep the four
-gates visible in code and traces; Postgres owner columns are not authorization.
+All PLAN slices are accepted, platform verification + documentation are complete, AND a
+boot4-inspired hardening + RFC 9457 filter-401 unification pass shipped on top (commits 40f2170,
+60ce1e5; pushed; full acceptance green). The stack is torn down and the build cache pruned. The next
+loop is NOT a new feature: (1) the doc-vs-code sync (see Exact next action) — the docs lagged the
+hardening commits, and `docs/production-hardening.md` FALSELY lists `@Version`/optimistic-lock as "not
+built"; (2) a real code defect the sync found — catalog-service ships a dev SpiceDB preshared-key
+default, unlike cart/order's fail-closed no-default; (3) the verification-parity gaps (a
+commerce-web-starter verify gate; architecture-gate coverage of the starter; the invalid_token
+reject-branch test in cart + order). Keep the four gates visible in code and traces; Postgres owner
+columns and TSID ids are not authorization. ArchUnit/NullAway/PIT were considered and declined as
+reference-overkill.
 
 ## Session log
 
@@ -895,3 +926,36 @@ Append-only, timestamped chronology (newest at the bottom); captures non-commit 
   the README documentation map. Consolidated grep gate over the docs: zero em-dashes, zero stray
   separators, no slop words, all intra-doc links resolve. Documentation slice and PLAN build order
   complete.
+- 2026-06-21 — Claude — mined `../boot4-reference` (7 parallel analysis agents) for cross-cutting
+  Spring quality, then shipped a hardening slice via a foundation agent + 4 parallel per-service
+  agents. Built a shared `commerce-web-starter` (auto-config RFC 9457 GlobalExceptionHandler,
+  TsidGenerator, keyset CursorPaginator, TraceIdFilter, sealed ApiException hierarchy) adopted by all
+  4 services (their copied `RestExceptionHandler`s deleted). TSID storage ids; `@Version` (cart
+  threads the version through the domain so the lock bites; order reload-converge for recover-forward;
+  payment insert-only; `existsById` TOCTOU removed); catalog cursor pagination (default 20, capped);
+  typed validated `@ConfigurationProperties` + fail-closed preshared-key; order S2S connect/read
+  timeouts + transient-only retry + datasource-proxy N+1 guard; payment status enum; catalog
+  PATCH->PUT. Completeness pass: every repository operation has a real-Postgres Testcontainers test
+  and every API endpoint has RFC 9457 error tests — the latter caught a real bug (cancelling an
+  already-cancelled order returned 500 -> now 409 via `OrderAlreadyCancelledException`). Three
+  live-only defects the host gates missed and the live e2e caught: `@Transactional(REQUIRES_NEW)` on a
+  `final` class broke the order context (Boot CGLIB cannot subclass final -> dropped `final`); the new
+  `commerce-web-starter` module was missing from each service Dockerfile's in-container `-am` reactor
+  build context (added the COPY lines); and the RFC 9457 authz handler over-scrubbed (blanket-replaced
+  the safe gate-3 scope reason -> fixed to return the safe `getMessage()` and log only the sensitive
+  `DecisionTrace`). Full acceptance green (verify-all + verify-live-all 17 SEC + verify-frontend).
+  Committed + pushed `40f2170`.
+- 2026-06-21 — Claude — unified the per-service auth-filter 401s to the full RFC 9457 shape via a
+  shared `ProblemDetailWriter` (filters run pre-DispatcherServlet so they write the body directly;
+  `TraceIdFilter` is now `@Order(HIGHEST_PRECEDENCE)` so the filter-401 carries the trace id). The
+  live run caught a token-material-guard false positive (the `INVALID_TOKEN` errorCode matched the
+  substring `id_token`); tightened the e2e guard to word-boundary the claim names (the JWT-string
+  pattern still catches a real leak). Full acceptance green. Committed + pushed `60ce1e5`. Then tore
+  the stack down (`docker compose down -v`) and pruned the build cache (3.57 GB freed inside the VM).
+- 2026-06-21 — Claude — ran a staff-engineer review + a 3-agent doc-vs-code sync audit; both confirm
+  the docs lag the two hardening commits. Updated this PROGRESS.md (Current slice + Exact next action +
+  Session handoff + this entry). Open findings for the next loop: the broader doc-sync
+  (README/PLAN/AGENTS + `docs/`, and correcting `docs/production-hardening.md`'s now-FALSE
+  TSID/@Version "not built" claims), the catalog-service dev preshared-key default (a real fail-closed
+  gap vs cart/order), and the verification-parity gaps. Declined ArchUnit/NullAway/PIT/CVE-scanners
+  (user call) as overkill for a teaching reference.

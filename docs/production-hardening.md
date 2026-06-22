@@ -5,7 +5,10 @@ realm, per-service local Postgres databases, and loopback-bound dev secrets. The
 ladder, the BFF token boundary, and the server-to-server checkout path are real and verified
 here, but the operational layer a real deployment adds is not. This document lists those
 production concerns, why each is left out of the default, and where it would plug into the
-architecture in [architecture.md](architecture.md). Nothing below is built in this repo.
+architecture in [architecture.md](architecture.md). Most of what follows is deferred, with two
+exceptions called out where they appear: the optimistic-lock version column and the TSID storage
+ids, noted below as the in-place foundation that a production hardening builds on rather than
+something a deployment still has to add.
 
 The decision throughout is to keep the reference focused on the authorization model. Operational
 concerns (transport identity, scheduling, data operations, telemetry) are orthogonal to the
@@ -129,15 +132,20 @@ Where it plugs in: the Postgres layer in [architecture.md](architecture.md). The
 interfaces and Flyway migrations stay; HA topology, pooling, backup, and migration operations
 sit underneath them and do not touch the four gates or the ownership-column rule.
 
-Two concurrency notes specific to this reference, both single-node-safe today but worth
-hardening. Concurrent writes to the same aggregate (for example two `cancelOrder` calls, or two
-updates of one cart) are last-writer-wins; a production deployment adds an optimistic-lock version
-column so a lost update is detected rather than silently dropped. Separately, the SpiceDB owner
-relationship for a new cart or order is written just before the row is persisted; on a concurrent
-create-on-first-add race the request recovers by re-resolving to the winning row, but the owner
-tuple for the discarded id is left behind. It is harmless (no aggregate references it), and a
-production deployment adds a periodic relationship-reconciliation job to remove tuples with no
-backing row.
+Two concurrency facts are already built here, and one cleanup is deferred. Concurrent writes to
+the same aggregate (for example two `cancelOrder` calls, or two updates of one cart) are detected,
+not last-writer-wins: cart, order, and payment carry an optimistic-lock version column
+(`CartRow`, `OrderRow`, `PaymentRow` each have a `@Version` field, and every `V1__*.sql` declares
+`version BIGINT NOT NULL DEFAULT 0`). A stale update matches zero rows and Spring Data raises
+`OptimisticLockingFailureException`, which the shared web starter maps to an RFC 9457 `409`. The
+resource ids are TSIDs (`HypersistenceTsidGenerator`), generated server-side, which is also built.
+What a deployment still adds on top is automatic retry on the optimistic failure: `cancelOrder`
+surfaces the lock conflict to the caller as a `409` without retrying, by design, so the caller
+decides whether to re-read and re-apply. Separately, the SpiceDB owner relationship for a new cart
+or order is written just before the row is persisted; on a concurrent create-on-first-add race the
+request recovers by re-resolving to the winning row, but the owner tuple for the discarded id is
+left behind. It is harmless (no aggregate references it), and a production deployment adds a
+periodic relationship-reconciliation job to remove tuples with no backing row.
 
 ## Observability / SIEM
 

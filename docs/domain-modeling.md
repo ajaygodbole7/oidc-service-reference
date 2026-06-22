@@ -16,6 +16,12 @@ this document explains them.
 Dependencies point inward: web depends on service, service on the domain and the repository
 interfaces, persistence implements those interfaces. The domain depends on nothing else.
 
+The cross-cutting web concerns do not live in any one service. `commerce-web-starter`, a Spring
+Boot auto-configured starter, supplies them to all four: the RFC 9457 error handling
+(`GlobalExceptionHandler`, the sealed `ApiException` hierarchy, `ProblemDetailFactory`), the
+`TsidGenerator` for ids, the keyset `CursorPaginator`/`Page`, and `TraceIdFilter`. Each bean is
+`@ConditionalOnMissingBean`, so a service can override one without forking the rest.
+
 ## Controllers are web adapters
 
 A controller receives the validated `CommercePrincipal` (set as a request attribute after gate 2
@@ -73,6 +79,33 @@ provides a Spring Data JDBC implementation (`PostgresOrderRepository`) using a s
 so the domain stays free of mapping annotations. Swapping the store means a new implementation,
 not a change to the domain or services. Ownership columns are business data; they never decide
 access. Gate 4 does.
+
+## Identifiers are server-minted TSIDs
+
+Every storage id is a 13-char Crockford base32 TSID minted by the server via `TsidGenerator`
+(default `HypersistenceTsidGenerator`); id columns are `VARCHAR`. TSIDs are fixed-width and
+time-sortable, so `ORDER BY id` and `WHERE id > :cursor` are a stable keyset, which is what the
+cursor pagination rests on. Each id is a value type that wraps a `String` (`OrderId`, `CartId`,
+`ProductId`, `StoreId`), keeping the raw string off the domain method signatures.
+
+## Aggregate concurrency uses an optimistic version
+
+The cart, order, and payment `*Row` types carry a `@Version` column. Each aggregate handles
+concurrency differently:
+
+- **Cart** threads the version through the domain: a loaded `Cart` carries the persisted version,
+  and the update asserts on it, so a concurrent change fails the lock with
+  `OptimisticLockingFailureException`.
+- **Order** uses reload-converge: the domain does not carry a version; `save` re-reads the stored
+  version at write time and writes onto it. This is the recover-forward idempotency path (checkout
+  writes the order once; cancel is idempotent), not a conflict guard. The `version` column is still
+  bumped, available should a future concurrent-mutation path need it.
+- **Payment** is insert-only: an authorization is written exactly once, so the version starts null
+  and is never updated; it is present for a future update path. Replays lose the
+  `idempotency_key` unique-constraint race instead.
+
+A failed lock surfaces as `OptimisticLockingFailureException`, which the shared
+`GlobalExceptionHandler` maps to an RFC 9457 409 (`concurrent-modification`).
 
 ## Security helpers do not leak into the domain
 

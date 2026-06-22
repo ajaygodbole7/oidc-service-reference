@@ -54,7 +54,20 @@ the SpiceDB protocol.
 | Gate 2 (JWT) | `CommercePrincipalFilter` | Validate signature, `iss`, `exp`, `aud=commerce-api`; expose only the mapped `CommercePrincipal` to controllers. |
 | Gate 4 transport | `AuthorizationClient` | Make the SpiceDB check. The service calls `ResourceAuthorizer`, never gRPC directly. |
 | Trace | Security trace | Record the gate decisions under a bounded `X-Trace-Id`, with no token material. |
+| Error shape | `GlobalExceptionHandler`, `ProblemDetailWriter` | Map every failure to an RFC 9457 `application/problem+json` body (`type`, `title`, `status`, `detail`, `errorCode`, `traceId`), scrubbing security internals before they reach the client. |
 
 A developer reaches the application-service body only after gates 1 and 2 have passed. Gates 3
 and 4 are one line each. Everything else is the platform's job, and that is the point: the
 security model is hard to get wrong because most of it is not the feature author's code.
+
+## What the error shape does not leak
+
+Failures return a uniform RFC 9457 problem document, and the security-relevant part is what it
+withholds. A gate-4 denial maps to a `403` whose `detail` is the safe scope reason (for example
+"missing required scope cart:read"); the SpiceDB `DecisionTrace` that explains the denial is
+logged server-side at WARN and never appears in the body, so no relationship-graph internals reach
+the caller. A token rejected inside the auth filter, before the dispatcher runs, never reaches the
+`GlobalExceptionHandler` advice, so the filter writes the same shape through `ProblemDetailWriter`:
+a `401` with a fixed `invalid token` detail and the same `type`, `errorCode`, and `traceId`. The
+contract a client sees is identical whether the failure is raised in a controller or short-circuited
+in a filter, and in neither case does it carry token material or an authorization trace.

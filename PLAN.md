@@ -165,7 +165,22 @@ Important distinction:
   order, and payment domain data. Valkey stays for BFF sessions and short-TTL
   Security Trace; order/payment idempotency moves to Postgres when those
   services become persistent.
-- **Error shape.** `application/problem+json` everywhere.
+- **Error shape.** RFC 9457 `application/problem+json` everywhere, from the
+  single `GlobalExceptionHandler` in `commerce-web-starter`. Each body carries
+  `type`, `title`, `status`, `detail`, plus `errorCode`, `traceId`, and
+  `timestamp` extensions.
+- **Storage ids.** 13-char Crockford base32 TSIDs, time-sortable, minted
+  server-side by `TsidGenerator` (no client-supplied ids). `*Id` value types wrap
+  the `String`; id columns are `VARCHAR`.
+- **Optimistic locking.** Cart, order, and payment aggregates carry a `@Version`
+  column; a concurrent write surfaces as a 409.
+- **Config.** Each service binds typed `@ConfigurationProperties` validated at
+  boot. The SpiceDB preshared key has no default: a missing
+  `*_SPICEDB_PRESHARED_KEY` fails closed at startup rather than shipping a
+  placeholder.
+- **List pagination.** Collection endpoints use keyset cursor pagination via
+  `CursorPaginator`: a `limit` (defaulted and capped) and an opaque `cursor`,
+  returning items plus `nextCursor`.
 - **Anonymous catalog.** Gateway allowlists `GET /api/catalog/products` and
   product detail as auth-optional; catalog treats missing bearer as anonymous.
 - **Relationship manipulation.** Test-only fixture endpoints live behind a
@@ -243,6 +258,7 @@ auth-service/             # OIDC client + /internal/resolve + session store
 authorization-server/     # Keycloak realm
 authorization-service/    # SpiceDB + schema.zed + seed
 commerce-security-common/ # shared security primitives
+commerce-web-starter/      # shared web cross-cutting starter (errors, ids, pagination, trace)
 services/
   catalog-service/
   cart-service/
@@ -273,6 +289,7 @@ Copy/adapt:
 Net-new:
 
 - `commerce-security-common`.
+- `commerce-web-starter`.
 - `authorization-service` with SpiceDB schema and seed.
 - `AuthorizationClient` adapter.
 - Catalog, cart, order, and payment services.
@@ -294,6 +311,19 @@ DecisionTrace                      # allowed/denied(gate, resource)
 
 Raw JWTs stay at the security boundary. Domain objects never receive raw tokens.
 Per-service code wires these shared primitives; it does not duplicate them.
+
+`commerce-web-starter` is the second small shared module: a Spring Boot
+auto-configured starter (`CommerceWebAutoConfiguration`) for the web
+cross-cutting concerns every service repeated. It provides one RFC 9457
+`GlobalExceptionHandler` over a sealed `ApiException` hierarchy
+(`ResourceNotFoundException` 404, `ConflictException` 409,
+`BusinessRuleException` 422, `BadRequestException` 400,
+`ServiceUnavailableException` 503), `ProblemDetailFactory`/`ProblemDetailWriter`,
+a server-minted `TsidGenerator`, a keyset `CursorPaginator` plus `Page`, and a
+`TraceIdFilter` (X-Trace-Id to MDC, ordered first). All four services depend on
+it; their per-service `RestExceptionHandler` is deleted and domain exceptions
+extend the shared bases. Same rule as the security module: just enough, not a
+framework.
 
 Use simple, focused JWT/JOSE libraries behind the module. Do not build the core
 teaching path on heavyweight Spring OAuth2 Resource Server auto-configuration.
@@ -361,7 +391,7 @@ POST /auth/logout
 GET    /api/catalog/products
 GET    /api/catalog/products/{productId}
 POST   /api/catalog/products
-PATCH  /api/catalog/products/{productId}
+PUT    /api/catalog/products/{productId}
 GET    /api/cart
 GET    /api/carts/{cartId}
 POST   /api/cart/items
@@ -616,7 +646,8 @@ com.example.commerce.cart.web
   CartController.java
   CartRequest.java
   CartResponse.java
-  RestExceptionHandler.java
+  CommercePrincipalFilter.java
+  # no RestExceptionHandler: commerce-web-starter's GlobalExceptionHandler maps errors
 
 com.example.commerce.cart.service
   CartApplicationService.java
@@ -633,6 +664,9 @@ com.example.commerce.cart.domain
   CartRepository.java
 
 com.example.commerce.cart.persistence
+  CartRow.java
+  CartRowRepository.java
+  PostgresCartRepository.java
   InMemoryCartRepository.java
 
 com.example.commerce.cart.client
@@ -646,7 +680,8 @@ com.example.commerce.cart.config
 
 Rules:
 
-- `web`: controllers, request/response DTOs, exception mapping only.
+- `web`: controllers and request/response DTOs only; error mapping comes from
+  `commerce-web-starter`'s `GlobalExceptionHandler`, not a per-service handler.
 - `service`: Spring `@Service` application orchestration.
 - `domain`: business entities, value objects, repository interfaces,
   invariants.
@@ -654,8 +689,9 @@ Rules:
 - `client`: outbound clients to SpiceDB, Payment, Trace, or Auth-related
   services.
 - `config`: Spring configuration and properties.
-- Shared security primitives come from `commerce-security-common`, not
-  per-service copies.
+- Shared security primitives come from `commerce-security-common`, and shared
+  web cross-cutting (error handler, ids, pagination, trace) from
+  `commerce-web-starter`, not per-service copies.
 
 Controller/application-service contract:
 
@@ -722,17 +758,19 @@ Persistence rules:
 Endpoints:
 
 ```text
-GET  /api/catalog/products
+GET  /api/catalog/products?limit=&cursor=
 GET  /api/catalog/products/{productId}
 POST /api/catalog/products
-PATCH /api/catalog/products/{productId}
+PUT  /api/catalog/products/{productId}
 ```
 
 Rules:
 
+- Product list is cursor-paginated: `limit` defaults to 20 and is capped, `cursor`
+  is the opaque keyset token, the response returns items plus `nextCursor`.
 - Product list/detail is anonymous or authenticated optional, read-only, and must not
   expose management-only fields.
-- `POST/PATCH` require:
+- `POST/PUT` require:
   - valid JWT with `aud=commerce-api`
   - scope `catalog:write`
   - SpiceDB `store:main#manage@user:{sub}`

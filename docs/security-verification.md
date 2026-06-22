@@ -10,7 +10,7 @@ stable id and bounded output; no tokens or secrets are printed. This document is
 | `scripts/verify-all.sh` | Static: version pins, per-service unit and contract tests, architecture boundaries, SpiceDB schema, draft security cases, and (when a stack is running) service health and the per-service Postgres databases. | none |
 | `scripts/verify-architecture.sh` | Layering invariants by source inspection (also run inside `verify-all`). | none |
 | `scripts/verify-frontend.sh` | Frontend lint, type-check, unit tests, build, and Playwright end-to-end. | live (e2e) |
-| `scripts/verify-live-all.sh` | Every live `SEC-*` case for cart, catalog, and order/payment, in one stack bring-up. | live |
+| `scripts/verify-live-all.sh` | The 17 live backend `SEC-*` cases for cart, catalog, and order/payment, in one stack bring-up. | live |
 
 A complete pass runs all three layers: `verify-all.sh` (static gates), `verify-frontend.sh`
 (frontend checks and browser e2e), and `verify-live-all.sh` (live backend security). The live
@@ -23,10 +23,14 @@ Each live security case has a stable id, a purpose, the command to run it, the e
 and a remediation hint. The catalogs are checked in under `tests/security/`:
 `cart-security-cases.tsv`, `catalog-security-cases.tsv`, `order-payment-security-cases.tsv`.
 
-What the live suite proves, by area:
+The backend live battery is 17 cases: 11 in `cart-security-cases.tsv`, 1 in
+`catalog-security-cases.tsv`, and 5 in `order-payment-security-cases.tsv`. `SEC-NO-BROWSER-TOKENS`
+is not in this battery; it is the frontend Playwright case run by `scripts/e2e-auth.sh` (under
+`verify-frontend.sh`), which asserts the token boundary end to end through the browser.
 
-- **Token boundary:** `SEC-NO-BROWSER-TOKENS`, `SEC-SPOOFED-IDENTITY-HEADERS`,
-  `SEC-BROWSER-AUTHORIZATION-OVERWRITTEN`.
+What the backend live suite proves, by area:
+
+- **Token boundary:** `SEC-SPOOFED-IDENTITY-HEADERS`, `SEC-BROWSER-AUTHORIZATION-OVERWRITTEN`.
 - **Scope and relationship independence:** `SEC-SCOPE-WITHOUT-RELATIONSHIP`,
   `SEC-RELATIONSHIP-WITHOUT-SCOPE`, `SEC-NON-COMMERCE-AUD`.
 - **Resource ownership:** `SEC-OWNERSHIP-PROVISIONED-FOR-CALLER`, `SEC-NO-RESOURCE-HIJACK`,
