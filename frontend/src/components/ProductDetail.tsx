@@ -39,15 +39,21 @@ function ProductBody({ product }: { readonly product: CatalogProduct }) {
         </div>
         <Badge
           className="mt-1"
-          variant={product.inventoryStatus === "out_of_stock" ? "destructive" : "secondary"}
+          variant={product.inventoryStatus === "OUT_OF_STOCK" ? "destructive" : "secondary"}
         >
           {formatInventoryStatus(product.inventoryStatus)}
         </Badge>
       </CardHeader>
-      <Separator />
-      <CardContent className="pt-6 text-sm leading-relaxed text-muted-foreground">
-        {product.description}
-      </CardContent>
+      {/* rendering-conditional-render: description is optional on the catalog API,
+          so render the body block only when present — explicit ternary, never `&&`. */}
+      {product.description !== undefined ? (
+        <>
+          <Separator />
+          <CardContent className="pt-6 text-sm leading-relaxed text-muted-foreground">
+            {product.description}
+          </CardContent>
+        </>
+      ) : null}
     </Card>
   );
 }

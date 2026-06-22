@@ -17,19 +17,19 @@ function stubRenderLink(productId: string, children: ReactNode): ReactNode {
 const products: readonly CatalogProduct[] = [
   {
     id: "PROD0000000A1",
+    sku: "SKU-CHAIR",
     name: "Aeron Chair",
-    description: "Ergonomic office chair.",
     priceCents: 129900,
     currency: "USD",
-    inventoryStatus: "in_stock"
+    inventoryStatus: "IN_STOCK"
   },
   {
     id: "PROD0000000B2",
+    sku: "SKU-DESK",
     name: "Standing Desk",
-    description: "Height-adjustable desk.",
     priceCents: 59900,
     currency: "USD",
-    inventoryStatus: "low_stock"
+    inventoryStatus: "LOW_STOCK"
   }
 ];
 

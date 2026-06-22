@@ -27,13 +27,14 @@ const catalogFixture = {
   products: [
     {
       id: "prod-pack",
+      sku: "SKU-PACK",
       name: "Camp Pantry Pack",
-      description: "Shelf-stable staples for a weekend away.",
-      priceCents: 4299,
       currency: "USD",
-      inventoryStatus: "in_stock"
+      priceCents: 4299,
+      inventoryStatus: "IN_STOCK"
     }
-  ]
+  ],
+  nextCursor: null
 };
 
 test("cart shows the login prompt for anonymous users", async ({ page }) => {

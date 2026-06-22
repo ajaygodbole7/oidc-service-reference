@@ -40,10 +40,14 @@ export function ProductCard({ product }: ProductCardProps) {
             {formatMoney(product.priceCents, product.currency)}
           </span>
         </div>
-        <CardDescription className="line-clamp-2">{product.description}</CardDescription>
+        {/* rendering-conditional-render: description is optional on the catalog
+            API, so render it only when present — explicit ternary, never `&&`. */}
+        {product.description !== undefined ? (
+          <CardDescription className="line-clamp-2">{product.description}</CardDescription>
+        ) : null}
       </CardHeader>
       <CardContent className="mt-auto">
-        <Badge variant={product.inventoryStatus === "out_of_stock" ? "destructive" : "secondary"}>
+        <Badge variant={product.inventoryStatus === "OUT_OF_STOCK" ? "destructive" : "secondary"}>
           {formatInventoryStatus(product.inventoryStatus)}
         </Badge>
       </CardContent>

@@ -24,12 +24,13 @@ export type Cart = {
   readonly totalCents: number;
 };
 
-export type InventoryStatus = "in_stock" | "low_stock" | "out_of_stock";
+export type InventoryStatus = "IN_STOCK" | "LOW_STOCK" | "OUT_OF_STOCK";
 
 export type CatalogProduct = {
   readonly id: string;
+  readonly sku?: string;
   readonly name: string;
-  readonly description: string;
+  readonly description?: string;
   readonly priceCents: number;
   readonly currency: string;
   readonly inventoryStatus: InventoryStatus;
@@ -104,8 +105,9 @@ export function isCatalogProduct(value: unknown): value is CatalogProduct {
   const product = value as Record<string, unknown>;
   return (
     typeof product.id === "string" &&
+    (product.sku === undefined || typeof product.sku === "string") &&
     typeof product.name === "string" &&
-    typeof product.description === "string" &&
+    (product.description === undefined || typeof product.description === "string") &&
     isNonNegativeInteger(product.priceCents) &&
     isCurrencyCode(product.currency) &&
     isInventoryStatus(product.inventoryStatus) &&
@@ -149,7 +151,7 @@ function isCurrencyCode(value: unknown): value is string {
 }
 
 function isInventoryStatus(value: unknown): value is InventoryStatus {
-  return value === "in_stock" || value === "low_stock" || value === "out_of_stock";
+  return value === "IN_STOCK" || value === "LOW_STOCK" || value === "OUT_OF_STOCK";
 }
 
 function isSameOriginImagePath(value: unknown): value is string {
@@ -160,11 +162,11 @@ function isSameOriginImagePath(value: unknown): value is string {
 
 export function formatInventoryStatus(status: InventoryStatus): string {
   switch (status) {
-    case "in_stock":
+    case "IN_STOCK":
       return "In stock";
-    case "low_stock":
+    case "LOW_STOCK":
       return "Low stock";
-    case "out_of_stock":
+    case "OUT_OF_STOCK":
       return "Out of stock";
   }
 }

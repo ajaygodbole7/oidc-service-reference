@@ -29,11 +29,12 @@ function renderInRouter(children: ReactNode) {
 
 const sampleProduct: CatalogProduct = {
   id: "01HZQ8ABCDEFG",
+  sku: "SKU-CHAIR",
   name: "Aeron Chair",
   description: "An ergonomic office chair with adjustable lumbar support.",
   priceCents: 129900,
   currency: "USD",
-  inventoryStatus: "low_stock"
+  inventoryStatus: "LOW_STOCK"
 };
 
 describe("ProductDetail (pure presentational)", () => {
