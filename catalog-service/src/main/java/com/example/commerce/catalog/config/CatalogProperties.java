@@ -51,9 +51,12 @@ public class CatalogProperties {
 
   /**
    * SpiceDb client settings for the resource-level (store#manage) authorization check. The
-   * {@code presharedKey} has NO default on purpose: an unset {@code catalog.spicedb.preshared-key}
-   * (env {@code CATALOG_SPICEDB_PRESHARED_KEY}) fails {@link NotBlank} at boot rather than silently
-   * shipping a dev key. Fail-closed, matching cart and order.
+   * {@code presharedKey} has NO Java default; {@code application.yml} binds it via
+   * {@code ${CATALOG_SPICEDB_PRESHARED_KEY:}} (empty default), so an unset env var binds to the
+   * empty string and fails {@link NotBlank} at boot (fail-closed) rather than silently shipping a
+   * dev key. The empty {@code :} default is required — {@code @ConfigurationProperties} leaves an
+   * unresolved {@code ${...}} as a non-blank literal that would pass {@link NotBlank} (fail-open).
+   * Matches cart and order.
    */
   public record SpiceDb(
       @NotBlank String target,

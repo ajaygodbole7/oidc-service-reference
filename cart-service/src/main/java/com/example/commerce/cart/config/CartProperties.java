@@ -12,9 +12,11 @@ import org.springframework.validation.annotation.Validated;
  * Typed model for the {@code cart.*} cluster, replacing the {@code @Value} reads in
  * {@link CartConfig}. Bean-validation runs at boot, so a missing required value fails fast.
  *
- * <p>The SpiceDB preshared key has NO default on purpose: an unset
- * {@code cart.spicedb.preshared-key} (env {@code CART_SPICEDB_PRESHARED_KEY}) fails
- * {@link NotBlank} at boot rather than silently shipping a dev key — fail-closed. Non-secret
+ * <p>The SpiceDB preshared key has NO Java default; {@code application.yml} binds it via
+ * {@code ${CART_SPICEDB_PRESHARED_KEY:}} (empty default), so an unset env var binds to the empty
+ * string and fails {@link NotBlank} at boot — fail-closed, never silently shipping a dev key. The
+ * empty {@code :} default is required: {@code @ConfigurationProperties} leaves an unresolved
+ * {@code ${...}} as a non-blank literal that would pass {@link NotBlank} (fail-open). Non-secret
  * values keep dev-friendly defaults via {@link DefaultValue}.
  */
 @Validated
@@ -28,7 +30,8 @@ public record CartProperties(@Valid @NotNull Oidc oidc, @Valid @NotNull Spicedb 
       @NotNull URI jwksUri) {
   }
 
-  /** SpiceDB connection inputs. {@code presharedKey} has no default: fail-closed if unset. */
+  /** SpiceDB connection inputs. {@code presharedKey} has no Java default; the yml empty default
+   * ({@code ${CART_SPICEDB_PRESHARED_KEY:}}) makes an unset key bind to "" and fail @NotBlank at boot. */
   public record Spicedb(
       @NotBlank @DefaultValue("spicedb:50051") String target,
       @NotBlank String presharedKey,

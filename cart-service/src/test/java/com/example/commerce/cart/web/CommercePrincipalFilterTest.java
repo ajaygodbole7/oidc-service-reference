@@ -24,8 +24,8 @@ import tools.jackson.databind.json.JsonMapper;
  * the validator. Both assert the enriched RFC 9457 shape shared with the advice: {@code type} =
  * base-url + slug, {@code errorCode}, {@code traceId} from MDC, and {@code application/problem+json},
  * with the {@code WWW-Authenticate} header preserved. The invalid-token branch is stubbed through the
- * filter's {@code CartTokenValidator} functional-interface seam (the production constructor adapts the
- * final {@code CommerceJwtValidator} via a method reference).
+ * shared {@code TokenValidator} seam the filter injects (production wires the final
+ * {@code CommerceJwtValidator}, which implements it).
  */
 class CommercePrincipalFilterTest {
 
@@ -34,7 +34,7 @@ class CommercePrincipalFilterTest {
 
   // Validator is never invoked on the missing-bearer branch.
   private final CommercePrincipalFilter filter =
-      new CommercePrincipalFilter((CommercePrincipalFilter.CartTokenValidator) null, problemDetailWriter());
+      new CommercePrincipalFilter(null, problemDetailWriter());
 
   @AfterEach
   void clearMdc() {

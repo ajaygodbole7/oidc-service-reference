@@ -39,7 +39,7 @@ import org.jspecify.annotations.Nullable;
  * <p>Uses focused Nimbus JOSE rather than Spring OAuth2 Resource Server auto-configuration,
  * so the four gates stay visible in service code.
  */
-public final class CommerceJwtValidator {
+public final class CommerceJwtValidator implements TokenValidator {
 
   private static final JWSAlgorithm RS256 = JWSAlgorithm.RS256;
   private static final JOSEObjectType AT_JWT = new JOSEObjectType("at+JWT");
@@ -82,6 +82,7 @@ public final class CommerceJwtValidator {
   }
 
   /** Validate the token and map it to a principal, or throw. Fail closed. */
+  @Override
   public CommercePrincipal validate(String token) {
     JWTClaimsSet claims;
     try {

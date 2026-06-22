@@ -27,8 +27,10 @@ order:
     jwks-uri: ${ORDER_OIDC_JWKS_URI:http://keycloak:8080/realms/oidc-service-reference/protocol/openid-connect/certs}
   spicedb:
     target: ${ORDER_SPICEDB_TARGET:spicedb:50051}
-    # No dev default: order-service must fail at boot if the preshared key is unset, never ship a placeholder.
-    preshared-key: ${SPICEDB_PRESHARED_KEY}
+    # No dev key default, and the empty ":" default is load-bearing: an unset key then binds to ""
+    # and fails @NotBlank at boot (fail-closed). Without the ":", @ConfigurationProperties leaves an
+    # unresolved ${...} as the literal (non-blank) string and @NotBlank would pass — fail-open.
+    preshared-key: ${SPICEDB_PRESHARED_KEY:}
     plaintext: ${ORDER_SPICEDB_PLAINTEXT:true}
   payment:
     authorize-uri: ${ORDER_PAYMENT_AUTHORIZE_URI:http://payment-service:8085/internal/payments/authorize}

@@ -38,5 +38,9 @@ catalog:
     jwks-uri: ${CATALOG_OIDC_JWKS_URI:http://keycloak:8080/realms/oidc-service-reference/protocol/openid-connect/certs}
   spicedb:
     target: ${CATALOG_SPICEDB_TARGET:spicedb:50051}
-    preshared-key: ${CATALOG_SPICEDB_PRESHARED_KEY}
+    # No dev key default, and the empty ":" default is load-bearing: an unset
+    # CATALOG_SPICEDB_PRESHARED_KEY then binds to "" and fails @NotBlank at boot (fail-closed).
+    # Without the ":", @ConfigurationProperties leaves an unresolved ${...} as the literal
+    # (non-blank) string and @NotBlank would pass — fail-open. Never ship a dev key default.
+    preshared-key: ${CATALOG_SPICEDB_PRESHARED_KEY:}
     plaintext: ${CATALOG_SPICEDB_PLAINTEXT:true}

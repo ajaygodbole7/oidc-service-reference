@@ -14,9 +14,11 @@ import org.springframework.validation.annotation.Validated;
  * {@link OrderConfig}. Validation fails the context at boot if a required value is missing, so a
  * misconfigured deploy never starts serving instead of failing the first request.
  *
- * <p>Note: {@code spicedb.preshared-key} has NO default. A dev placeholder default would silently
- * ship a credential into every environment that forgets to set it; the order-service must fail at
- * boot when it is unset rather than authorize against SpiceDB with a known key.
+ * <p>Note: {@code spicedb.preshared-key} has no shippable default. The field defaults to "" and
+ * {@code application.yml} binds it via {@code ${SPICEDB_PRESHARED_KEY:}} (empty default), so an unset
+ * key resolves to "" and fails {@link NotBlank} at boot rather than authorizing against SpiceDB with
+ * a known key. The empty {@code :} default is required: {@code @ConfigurationProperties} leaves an
+ * unresolved {@code ${...}} as a non-blank literal that would pass {@link NotBlank} (fail-open).
  */
 @ConfigurationProperties("order")
 @Validated
@@ -86,7 +88,11 @@ public class OrderProperties {
     @NotBlank
     private String target = "spicedb:50051";
 
-    /** No default on purpose: an unset preshared key must fail the context, not ship a placeholder. */
+    /**
+     * Defaults to "" (blank), which fails {@link NotBlank}. With application.yml binding
+     * {@code ${SPICEDB_PRESHARED_KEY:}} (empty default), an unset key stays "" and fails the context
+     * at boot (fail-closed) instead of shipping a placeholder.
+     */
     @NotBlank
     private String presharedKey = "";
 

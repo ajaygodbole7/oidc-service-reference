@@ -69,19 +69,19 @@ for svc in cart catalog order payment; do
   base="$svc-service/src/main/java/com/example/commerce/$svc"
 
   assert_no_import "$base/domain" \
-    "^import (org\.springframework|jakarta\.|com\.example\.commerce\.$svc\.(persistence|web|service|config|integration|testfixture))" \
+    "^import (static )?(org\.springframework|jakarta\.|com\.example\.commerce\.$svc\.(persistence|web|service|config|integration|testfixture))" \
     "ARCH-DOMAIN-PURE-$svc" "domain must depend inward only (no framework or other-layer imports): $svc"
 
   assert_no_import "$base/web" \
-    "^import com\.example\.commerce\.$svc\.persistence" \
+    "^import (static )?com\.example\.commerce\.$svc\.persistence" \
     "ARCH-WEB-NO-PERSISTENCE-$svc" "web must not import persistence; route through the application service: $svc"
 
   assert_no_import "$base/web" \
-    "^import com\.example\.commerce\.security\.(ScopeAuthorizer|ResourceAuthorizer)" \
+    "^import (static )?com\.example\.commerce\.security\.(ScopeAuthorizer|ResourceAuthorizer)" \
     "ARCH-GATES-AT-SERVICE-$svc" "gate authorizers must not be invoked from web: $svc"
 
   assert_no_import "$base/domain" \
-    "^import com\.example\.commerce\.security\.(ScopeAuthorizer|ResourceAuthorizer)" \
+    "^import (static )?com\.example\.commerce\.security\.(ScopeAuthorizer|ResourceAuthorizer)" \
     "ARCH-GATES-AT-SERVICE-$svc" "gate authorizers must not be invoked from domain: $svc"
 
   pass "ARCH-LAYERING-$svc" "$svc: domain pure, web free of persistence, gates only at the service boundary"
@@ -101,9 +101,14 @@ done
 # commerce-web-starter is a generic shared web module: it may depend on commerce-security-common for
 # the exception types its advice maps, but it must never depend on a concrete service. A service
 # import here would make the shared starter no longer reusable across services.
-starter_base="commerce-web-starter/src/main/java/com/example/commerce/web"
+# Scan the whole starter source root (not just the web package) so a service import in any package
+# is caught, and fail closed if the source tree is missing — assert_no_import returns 0 for an absent
+# dir, which would otherwise let this gate report a green pass while checking nothing.
+starter_base="commerce-web-starter/src/main/java"
+[ -d "$starter_base" ] \
+  || fail_check "ARCH-STARTER-GENERIC" "commerce-web-starter source tree missing at $starter_base; cannot verify it stays service-agnostic"
 assert_no_import "$starter_base" \
-  "^import com\.example\.commerce\.(cart|catalog|order|payment)\." \
+  "^import (static )?com\.example\.commerce\.(cart|catalog|order|payment)\." \
   "ARCH-STARTER-GENERIC" "commerce-web-starter must not import any service package; it stays a generic shared web module"
 pass "ARCH-STARTER-GENERIC" "commerce-web-starter imports no service package (generic shared web module)"
 

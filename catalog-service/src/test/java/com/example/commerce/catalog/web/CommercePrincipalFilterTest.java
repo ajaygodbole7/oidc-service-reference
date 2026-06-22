@@ -22,6 +22,7 @@ import com.example.commerce.security.DecisionTrace;
 import com.example.commerce.security.InvalidTokenException;
 import com.example.commerce.security.ResourceAuthorizer;
 import com.example.commerce.security.ScopeAuthorizer;
+import com.example.commerce.security.TokenValidator;
 import com.example.commerce.web.error.CommerceErrorProperties;
 import com.example.commerce.web.error.GlobalExceptionHandler;
 import com.example.commerce.web.error.ProblemDetailFactory;
@@ -122,7 +123,7 @@ class CommercePrincipalFilterTest {
         .andExpect(jsonPath("$.id").value("new-product"));
   }
 
-  private MockMvc mockMvc(CommercePrincipalFilter.CatalogTokenValidator validator) {
+  private MockMvc mockMvc(TokenValidator validator) {
     return MockMvcBuilders
         .standaloneSetup(new CatalogController(service, () -> "new-product"))
         .addFilters(new CommercePrincipalFilter(validator, problemDetailWriter()))
@@ -204,8 +205,7 @@ class CommercePrincipalFilterTest {
     }
   }
 
-  private static final class RecordingTokenValidator
-      implements CommercePrincipalFilter.CatalogTokenValidator {
+  private static final class RecordingTokenValidator implements TokenValidator {
 
     private final Map<String, CommercePrincipal> principals = new LinkedHashMap<>();
     private final Set<String> failingTokens = new java.util.HashSet<>();

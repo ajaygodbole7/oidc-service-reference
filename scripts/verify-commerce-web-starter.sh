@@ -9,6 +9,8 @@ cd "$root"
 info "commerce-web-starter verifier"
 info "evidence is bounded: Maven goal and test result only; no tokens or secrets are printed"
 
+[ -f pom.xml ] \
+  || die "root pom.xml missing; commerce-web-starter must build with commerce-security-common in the same reactor"
 [ -f commerce-web-starter/pom.xml ] \
   || die "commerce-web-starter/pom.xml missing; shared web starter is not scaffolded"
 
@@ -39,12 +41,13 @@ case "$java_version" in
 esac
 
 # commerce-web-starter depends on commerce-security-common, so build through the root reactor
-# with -am (also-make) to compile that dependency in the same session before the starter's tests.
+# (-f pom.xml) with -am (also-make) to compile that dependency in the same session before the
+# starter's tests.
 if [ -x auth-service/mvnw ]; then
-  auth-service/mvnw -B -pl commerce-web-starter -am clean test
+  auth-service/mvnw -B -f pom.xml -pl commerce-web-starter -am clean test
 else
   require_cmd mvn "Install Maven or restore auth-service/mvnw."
-  mvn -B -pl commerce-web-starter -am clean test
+  mvn -B -f pom.xml -pl commerce-web-starter -am clean test
 fi
 
 success "HARNESS-COMMERCE-WEB-STARTER passed"
