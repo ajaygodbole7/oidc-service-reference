@@ -1,6 +1,7 @@
 package com.example.commerce.catalog.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.example.commerce.catalog.domain.InventoryStatus;
 import com.example.commerce.catalog.domain.Money;
@@ -10,6 +11,7 @@ import com.example.commerce.catalog.domain.ProductName;
 import com.example.commerce.catalog.domain.ProductRepository;
 import com.example.commerce.catalog.domain.Sku;
 import com.example.commerce.catalog.domain.StoreId;
+import com.example.commerce.web.error.ConflictException;
 import java.math.BigDecimal;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -61,6 +63,33 @@ class PostgresProductRepositoryTest {
   @Test
   void findByIdReturnsEmptyOptionalForAnUnknownId() {
     assertThat(repository.findById(new ProductId("6801HWWMISSING"))).isEmpty();
+  }
+
+  @Test
+  void insertWithDuplicateSkuThrowsConflict() {
+    Product first = new Product(
+        new ProductId("6801HWWDUP001"),
+        new Sku("DUP-SKU-1"),
+        new ProductName("First"),
+        new Money(new BigDecimal("5.00"), "USD"),
+        InventoryStatus.IN_STOCK,
+        new StoreId("main"));
+    repository.save(first);
+
+    // A different id but the SAME sku violates the products_sku_key unique constraint. The
+    // repository must translate Postgres's DuplicateKeyException into a 409 ConflictException
+    // (RFC 9457 via the shared GlobalExceptionHandler), not let it surface as a 500.
+    Product duplicate = new Product(
+        new ProductId("6801HWWDUP002"),
+        new Sku("DUP-SKU-1"),
+        new ProductName("Second"),
+        new Money(new BigDecimal("9.00"), "USD"),
+        InventoryStatus.IN_STOCK,
+        new StoreId("main"));
+
+    assertThatThrownBy(() -> repository.save(duplicate))
+        .isInstanceOf(ConflictException.class)
+        .hasMessageContaining("DUP-SKU-1");
   }
 
   @Test

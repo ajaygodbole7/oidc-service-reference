@@ -8,11 +8,13 @@ import com.example.commerce.catalog.domain.ProductName;
 import com.example.commerce.catalog.domain.ProductRepository;
 import com.example.commerce.catalog.domain.Sku;
 import com.example.commerce.catalog.domain.StoreId;
+import com.example.commerce.web.error.ConflictException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import org.jspecify.annotations.Nullable;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
 
 /**
@@ -57,9 +59,28 @@ public final class PostgresProductRepository implements ProductRepository {
     if (rows.existsById(product.id().value())) {
       aggregateTemplate.update(row);
     } else {
-      aggregateTemplate.insert(row);
+      try {
+        aggregateTemplate.insert(row);
+      } catch (DuplicateKeyException exception) {
+        if (isSkuConflict(exception)) {
+          throw new ConflictException(
+              "duplicate-sku",
+              "A product with SKU '" + product.sku().value() + "' already exists.",
+              exception);
+        }
+        throw exception;
+      }
     }
     return product;
+  }
+
+  // Translate the products_sku_key unique-constraint violation into a 409 ConflictException
+  // (RFC 9457 via the shared GlobalExceptionHandler) instead of letting Postgres's
+  // DuplicateKeyException surface as a 500. Mirrors order-service's
+  // PostgresIdempotencyRepository.isIdempotencyKeyConflict.
+  private static boolean isSkuConflict(DuplicateKeyException exception) {
+    String message = String.valueOf(exception.getMostSpecificCause().getMessage());
+    return message.contains("products_sku_key");
   }
 
   private static ProductRow toRow(Product product) {

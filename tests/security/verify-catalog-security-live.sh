@@ -54,6 +54,13 @@ sh scripts/verify-cart-spicedb-live.sh
 docker compose restart apisix >/dev/null
 wait_responding "APISIX" "http://127.0.0.1:9080/auth/me" 120
 
+# Test-isolation: the merchant-write SEC case creates a product (sku SKU-<label>, e.g.
+# SKU-merchant-live-product). Remove any left by a prior run so the create returns 201, not a 409
+# duplicate-sku conflict; the Flyway seed uses TYPE-NNN skus, so "SKU-%" matches only test rows.
+# Mirrors the cart live harness (DELETE FROM carts WHERE owner_sub NOT IN ('alice', 'bob')).
+docker compose exec -T postgres psql -U "${POSTGRES_USER:-commerce}" -d catalog_db \
+  -c "DELETE FROM products WHERE sku LIKE 'SKU-%'" >/dev/null 2>&1 || true
+
 (
   cd "$root/frontend"
   export E2E_FULL_STACK=1
