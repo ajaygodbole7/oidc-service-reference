@@ -26,8 +26,11 @@ public final class SecretSentinel {
 
   // Profiles treated as inner-loop local dev. Anything else — staging, uat, prod, or any
   // custom environment name — is non-local and fails closed. Mirrors auth-service's
-  // SecretSentinelValidator.LOCAL_PROFILES.
-  private static final List<String> LOCAL_PROFILES = List.of("local", "dev", "test");
+  // SecretSentinelValidator.LOCAL_PROFILES, plus "test-fixture": the cart live security harness
+  // boots cart-service with CART_SERVICE_SPRING_PROFILES_ACTIVE=test-fixture (a local-only
+  // fixture-controller profile), so it is inner-loop dev and dev sentinels there warn rather
+  // than abort boot.
+  private static final List<String> LOCAL_PROFILES = List.of("local", "dev", "test", "test-fixture");
 
   private SecretSentinel() {}
 

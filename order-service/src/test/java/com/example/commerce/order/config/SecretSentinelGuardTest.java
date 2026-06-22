@@ -60,6 +60,19 @@ class SecretSentinelGuardTest {
   }
 
   @Test
+  void warnsButPasses_underTestFixtureProfile_theCartLiveHarnessProfile(CapturedOutput out) {
+    // Regression: the cart live security harness boots under "test-fixture", an inner-loop
+    // local profile. The sentinel must warn, not abort boot — an earlier allow-list of
+    // {local,dev,test} failed cart-service startup under the live battery.
+    var env = new MockEnvironment();
+    env.setActiveProfiles("test-fixture");
+    env.setProperty("spring.datasource.password", DATASOURCE_SENTINEL);
+    env.setProperty("order.payment.client-secret", CLIENT_SECRET_SENTINEL);
+    new SecretSentinelGuard(env).validateOnStartup();
+    assertThat(out.getOut()).contains("local-dev sentinel");
+  }
+
+  @Test
   void silentWhenNoSentinelInUse(CapturedOutput out) {
     var env = new MockEnvironment();
     env.setProperty("spring.datasource.password", "real-password");

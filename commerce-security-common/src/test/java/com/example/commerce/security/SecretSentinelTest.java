@@ -35,6 +35,16 @@ class SecretSentinelTest {
   }
 
   @Test
+  void isLocalProfile_trueForTestFixture_theCartLiveHarnessProfile() {
+    // Regression: the cart live security harness boots cart-service with
+    // SPRING_PROFILES_ACTIVE=test-fixture (a local-only fixture-controller profile). It is
+    // inner-loop dev, so the guard must treat it as local. Omitting it from the allow-list
+    // failed cart-service boot ("Refusing to run with default dev secrets") under the live
+    // battery even though the stack is local.
+    assertThat(SecretSentinel.isLocalProfile(new String[] {"test-fixture"})).isTrue();
+  }
+
+  @Test
   void isLocalProfile_falseWhenAnyProfileIsNonLocal() {
     assertThat(SecretSentinel.isLocalProfile(new String[] {"staging"})).isFalse();
     assertThat(SecretSentinel.isLocalProfile(new String[] {"prod"})).isFalse();
