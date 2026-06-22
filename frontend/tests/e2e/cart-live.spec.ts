@@ -53,7 +53,9 @@ async function loginAs(page: Page, username: string, password: string = username
     page.waitForURL(`${APP_ORIGIN}/`),
     page.click("#kc-login")
   ]);
-  await expect(page.getByText(/signed in as/i)).toBeVisible();
+  // Authenticated marker in the routed AppShell: the "Sign out" button (present
+  // iff a session exists). The header no longer renders "signed in as".
+  await expect(page.getByRole("button", { name: /sign out/i })).toBeVisible();
 }
 
 async function loginAsAlice(page: Page): Promise<void> {
@@ -150,6 +152,10 @@ test("SEC-CART-CURRENT-USER-SPICEDB: current cart loads through APISIX without t
   const capture = installSameOriginJsonCapture(page);
 
   await loginAsAlice(page);
+  // The cart now lives on its own /cart route (the routed SPA split the old
+  // single-page panels). Navigating here is what fires /api/cart through APISIX
+  // and renders the empty-cart screen.
+  await page.goto("/cart");
   await expect(page.getByText("Your cart is empty")).toBeVisible();
 
   await expect

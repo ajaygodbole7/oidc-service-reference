@@ -57,6 +57,19 @@ function ensureStorage(name: "localStorage" | "sessionStorage"): void {
 ensureStorage("localStorage");
 ensureStorage("sessionStorage");
 
+// jsdom defines window.scrollTo as a stub that THROWS "Not implemented";
+// TanStack Router calls it during navigation (scroll handling), logging that
+// error on every routed render. Override it with a no-op so router tests stay
+// quiet. Unconditional defineProperty because the jsdom stub is already a
+// function (a plain assignment guard would skip it).
+if (typeof window !== "undefined") {
+  Object.defineProperty(window, "scrollTo", {
+    value: () => undefined,
+    configurable: true,
+    writable: true
+  });
+}
+
 afterEach(() => {
   cleanup();
 });

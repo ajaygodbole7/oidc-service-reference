@@ -56,15 +56,21 @@ describe("Spec conformance — frontend invariants", () => {
     });
   });
 
-  describe("App.tsx (root component)", () => {
-    const source = read("src/App.tsx");
+  describe("data layer (TanStack Query hooks)", () => {
+    // The hand-rolled fetch+AbortController bookkeeping that used to live in
+    // App.tsx moved behind TanStack Query (src/lib/queries.ts). The
+    // abort-on-unmount guarantee is now structural: every queryFn receives the
+    // query's AbortSignal and TanStack Query aborts it when the consuming
+    // component unmounts or the query is superseded. Pin that the hooks thread
+    // the signal through rather than dropping it.
+    const source = read("src/lib/queries.ts");
 
-    it("aborts the in-flight /auth/me fetch on unmount", () => {
-      // Without AbortController + an `alive` guard, a slow /auth/me reply
-      // arriving after a route change would setState on an unmounted
-      // component (StrictMode double-invoke also exposes this).
-      expect(source).toContain("AbortController");
-      expect(source).toMatch(/controller\.abort\(\)/);
+    it("threads the query AbortSignal into every fetcher (abort on unmount)", () => {
+      // queryFn destructures `{ signal }` and passes it to the fetcher, so a
+      // slow reply arriving after unmount cannot resolve a dead request.
+      expect(source).toContain("queryFn");
+      expect(source).toMatch(/\(\{\s*signal\s*\}\)/);
+      expect(source).toMatch(/signal\)/);
     });
 
     it("never accesses localStorage / sessionStorage / indexedDB", () => {

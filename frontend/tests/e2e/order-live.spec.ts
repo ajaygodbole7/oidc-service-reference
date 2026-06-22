@@ -21,7 +21,9 @@ async function loginAs(page: Page, username: string, password: string = username
     page.waitForURL(`${APP_ORIGIN}/`),
     page.click("#kc-login")
   ]);
-  await expect(page.getByText(/signed in as/i)).toBeVisible();
+  // Authenticated marker in the routed AppShell: the "Sign out" button (present
+  // iff a session exists). The header no longer renders "signed in as".
+  await expect(page.getByRole("button", { name: /sign out/i })).toBeVisible();
 }
 
 async function csrfHeaders(page: Page): Promise<Record<string, string>> {

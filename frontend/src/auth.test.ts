@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { callApi, fetchMe, signOut, stepUpHref } from "./auth";
+import { callApi, fetchMe, loginHref, signOut, stepUpHref } from "./auth";
 
 describe("BFF auth client", () => {
   beforeEach(() => {
@@ -151,6 +151,26 @@ describe("BFF auth client", () => {
 
   it("stepUpHref carries the URL-encoded current route as return_to", () => {
     expect(stepUpHref()).toBe(`/auth/step-up?return_to=${encodeURIComponent("/")}`);
+  });
+
+  it("loginHref carries the URL-encoded current route as return_to (no bare /auth/login)", () => {
+    // Return-to-login contract: every login entry must carry return_to so the BFF
+    // can replay the user's route after authentication; a bare /auth/login is forbidden.
+    expect(loginHref()).toBe(`/auth/login?return_to=${encodeURIComponent("/")}`);
+  });
+
+  it("loginHref and stepUpHref encode a deep route (path + query + hash) into return_to", () => {
+    // currentRoute() captures pathname + search + hash, so the post-auth replay lands
+    // exactly where the user was — not merely on the path.
+    const deep = "/products/01HZ?ref=promo#details";
+    window.history.pushState({}, "", deep);
+    try {
+      const encoded = encodeURIComponent(deep);
+      expect(loginHref()).toBe(`/auth/login?return_to=${encoded}`);
+      expect(stepUpHref()).toBe(`/auth/step-up?return_to=${encoded}`);
+    } finally {
+      window.history.pushState({}, "", "/");
+    }
   });
 
   it("surfaces auth_time and acr from /auth/me into the User DTO", async () => {

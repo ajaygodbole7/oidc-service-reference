@@ -164,7 +164,10 @@ async function loginAsAlice(page: Page): Promise<void> {
     page.waitForURL(`${APP_ORIGIN}/`),
     page.click("#kc-login")
   ]);
-  await expect(page.getByText(/signed in as/i)).toBeVisible();
+  // The routed AppShell renders the user's name + a "Sign out" button when
+  // authenticated (it no longer renders "signed in as"). The Sign out button is
+  // present iff a session exists, so it is the user-agnostic authenticated marker.
+  await expect(page.getByRole("button", { name: /sign out/i })).toBeVisible();
 }
 
 test("anonymous home shows sign-in entry without browser-side tokens", async ({

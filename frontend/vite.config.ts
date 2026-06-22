@@ -1,6 +1,9 @@
 /// <reference types="vitest" />
 
-import react from "@vitejs/plugin-react";
+import path from "node:path";
+import babel from "@rolldown/plugin-babel";
+import tailwindcss from "@tailwindcss/vite";
+import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 import type { ProxyOptions } from "vite";
 
@@ -61,7 +64,26 @@ const devSecurityHeaders = {
 };
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    // React Compiler: auto-memoizes components/hooks at build time, so manual
+    // React.memo / useMemo / useCallback for referential stability are no longer
+    // needed (and have been removed from the FE components). The compiler memoizes
+    // automatically.
+    //
+    // plugin-react v6 transforms with oxc (not Babel) and no longer takes a
+    // `babel` option; per its README the React Compiler is wired as a separate
+    // @rolldown/plugin-babel running reactCompilerPreset(). target "19" makes the
+    // preset use react/compiler-runtime — which React 19 ships built in — so NO
+    // separate react-compiler-runtime package is required.
+    babel({ presets: [reactCompilerPreset({ target: "19" })] }),
+    tailwindcss()
+  ],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src")
+    }
+  },
   server: {
     host: "127.0.0.1",
     port: 5173,
@@ -74,7 +96,24 @@ export default defineConfig({
   build: {
     target: "es2022",
     sourcemap: true,
-    reportCompressedSize: false
+    reportCompressedSize: false,
+    rollupOptions: {
+      output: {
+        // Split the framework runtime out of the app entry chunk. Keeps the
+        // main `index` entry small (and under the tight per-entry bundle
+        // budget) while the lazy route chunks code-split per screen. Total
+        // bytes are unchanged — this is purely how they're grouped.
+        manualChunks: (id: string): string | undefined => {
+          if (id.includes("/node_modules/react") || id.includes("/node_modules/scheduler")) {
+            return "react-vendor";
+          }
+          if (id.includes("/node_modules/@tanstack/")) {
+            return "tanstack";
+          }
+          return undefined;
+        }
+      }
+    }
   },
   test: {
     environment: "jsdom",
