@@ -3,6 +3,7 @@ package com.example.commerce.order;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.test.context.ActiveProfiles;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -22,6 +23,10 @@ import org.testcontainers.utility.DockerImageName;
 // never uses. MOCK does not bind a port; it is the same web context the other Testcontainers tests use.
 @Testcontainers
 @SpringBootTest
+// "test" is in the SecretSentinelGuard local-profile allow-list, so the committed dev-default
+// secrets downgrade to a WARN instead of failing the context boot (the guard fails closed under
+// no/non-local profile).
+@ActiveProfiles("test")
 class OrderServiceContextTest {
 
   @Container

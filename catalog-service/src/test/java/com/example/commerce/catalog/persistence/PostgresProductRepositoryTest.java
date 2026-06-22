@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.test.context.ActiveProfiles;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -27,6 +28,9 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  */
 @Testcontainers
 @SpringBootTest
+// "test" is in the SecretSentinelGuard local-profile allow-list, so the committed dev-default
+// secrets downgrade to a WARN instead of failing the context boot.
+@ActiveProfiles("test")
 class PostgresProductRepositoryTest {
 
   // Canonical seed TSIDs from V1__create_products.sql, in id (= keyset) order.

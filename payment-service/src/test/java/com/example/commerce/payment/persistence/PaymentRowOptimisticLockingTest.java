@@ -12,6 +12,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.jdbc.core.JdbcAggregateTemplate;
+import org.springframework.test.context.ActiveProfiles;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -25,6 +26,9 @@ import org.testcontainers.utility.DockerImageName;
  */
 @Testcontainers
 @SpringBootTest
+// "test" is in the SecretSentinelGuard local-profile allow-list, so the committed dev-default
+// secrets downgrade to a WARN instead of failing the context boot.
+@ActiveProfiles("test")
 class PaymentRowOptimisticLockingTest {
 
   @Container

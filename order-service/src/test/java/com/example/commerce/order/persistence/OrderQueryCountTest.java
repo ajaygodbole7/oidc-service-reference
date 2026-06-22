@@ -23,6 +23,7 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.context.ActiveProfiles;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -40,6 +41,9 @@ import org.testcontainers.utility.DockerImageName;
 @Testcontainers
 @SpringBootTest
 @Import(OrderQueryCountTest.ProxyConfig.class)
+// "test" is in the SecretSentinelGuard local-profile allow-list, so the committed dev-default
+// secrets downgrade to a WARN instead of failing the context boot.
+@ActiveProfiles("test")
 class OrderQueryCountTest {
 
   @Container

@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -32,6 +33,9 @@ import org.testcontainers.utility.DockerImageName;
 @Testcontainers
 @SpringBootTest
 @Transactional
+// "test" is in the SecretSentinelGuard local-profile allow-list, so the committed dev-default
+// secrets downgrade to a WARN instead of failing the context boot.
+@ActiveProfiles("test")
 class PostgresOrderRepositoryTest {
 
   @Container
