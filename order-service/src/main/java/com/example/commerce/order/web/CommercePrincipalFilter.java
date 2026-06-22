@@ -1,6 +1,7 @@
 package com.example.commerce.order.web;
 
 import com.example.commerce.security.CommerceJwtValidator;
+import com.example.commerce.security.CommercePrincipal;
 import com.example.commerce.security.InvalidTokenException;
 import com.example.commerce.web.error.ProblemDetailWriter;
 import jakarta.servlet.FilterChain;
@@ -12,6 +13,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -25,11 +27,17 @@ final class CommercePrincipalFilter extends OncePerRequestFilter {
   private static final Logger LOG = LoggerFactory.getLogger(CommercePrincipalFilter.class);
   private static final String ATTRIBUTE = "commercePrincipal";
 
-  private final CommerceJwtValidator validator;
+  private final OrderTokenValidator tokenValidator;
   private final ProblemDetailWriter problemDetailWriter;
 
+  @Autowired
   CommercePrincipalFilter(CommerceJwtValidator validator, ProblemDetailWriter problemDetailWriter) {
-    this.validator = validator;
+    this.tokenValidator = validator::validate;
+    this.problemDetailWriter = problemDetailWriter;
+  }
+
+  CommercePrincipalFilter(OrderTokenValidator tokenValidator, ProblemDetailWriter problemDetailWriter) {
+    this.tokenValidator = tokenValidator;
     this.problemDetailWriter = problemDetailWriter;
   }
 
@@ -57,7 +65,7 @@ final class CommercePrincipalFilter extends OncePerRequestFilter {
     }
 
     try {
-      request.setAttribute(ATTRIBUTE, validator.validate(token));
+      request.setAttribute(ATTRIBUTE, tokenValidator.validate(token));
     } catch (InvalidTokenException exception) {
       LOG.warn("order JWT validation failed: {}", boundedCause(exception));
       unauthorized(response, "Bearer error=\"invalid_token\"", "invalid bearer token");
@@ -82,5 +90,15 @@ final class CommercePrincipalFilter extends OncePerRequestFilter {
       HttpServletResponse response, String authenticateHeader, String detail) throws IOException {
     response.setHeader(HttpHeaders.WWW_AUTHENTICATE, authenticateHeader);
     problemDetailWriter.write(response, HttpStatus.UNAUTHORIZED, "invalid-token", "Unauthorized", detail);
+  }
+
+  /**
+   * Validation seam. Production adapts the final {@link CommerceJwtValidator} via a method
+   * reference; tests stub it to exercise the invalid-token branch.
+   */
+  @FunctionalInterface
+  interface OrderTokenValidator {
+
+    CommercePrincipal validate(String token);
   }
 }

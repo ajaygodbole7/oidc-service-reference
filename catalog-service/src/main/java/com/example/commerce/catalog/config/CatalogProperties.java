@@ -49,7 +49,12 @@ public class CatalogProperties {
     }
   }
 
-  /** SpiceDb client settings for the resource-level (store#manage) authorization check. */
+  /**
+   * SpiceDb client settings for the resource-level (store#manage) authorization check. The
+   * {@code presharedKey} has NO default on purpose: an unset {@code catalog.spicedb.preshared-key}
+   * (env {@code CATALOG_SPICEDB_PRESHARED_KEY}) fails {@link NotBlank} at boot rather than silently
+   * shipping a dev key. Fail-closed, matching cart and order.
+   */
   public record SpiceDb(
       @NotBlank String target,
       @NotBlank String presharedKey,
@@ -58,9 +63,6 @@ public class CatalogProperties {
     public SpiceDb {
       if (target == null || target.isBlank()) {
         target = "spicedb:50051";
-      }
-      if (presharedKey == null || presharedKey.isBlank()) {
-        presharedKey = "LOCAL_DEV_SPICEDB_PRESHARED_KEY__CHANGE_BEFORE_DEPLOY";
       }
     }
   }

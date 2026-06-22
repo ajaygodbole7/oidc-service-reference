@@ -1,0 +1,15 @@
+# Test-only overrides. This file shadows src/main/resources/application.yml on the test classpath,
+# so it must supply every value CatalogProperties requires. Production drops the SpiceDB preshared-key
+# default (env CATALOG_SPICEDB_PRESHARED_KEY) so a misconfigured deploy fails at boot (CatalogProperties
+# @NotBlank); the context tests supply an explicit dummy here so the application context refreshes
+# without a real secret. The datasource is provided by the Testcontainers @ServiceConnection.
+# The repository tests never call SpiceDB or the JWT validator; these values only need to bind.
+catalog:
+  oidc:
+    issuer-uri: https://issuer.example.test/realms/test
+    audience: commerce-api
+    jwks-uri: https://issuer.example.test/realms/test/protocol/openid-connect/certs
+  spicedb:
+    target: spicedb:50051
+    preshared-key: TEST_SPICEDB_PRESHARED_KEY
+    plaintext: true

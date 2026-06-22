@@ -98,6 +98,15 @@ for svc in cart catalog order; do
   pass "ARCH-GATES-PRESENT-$svc" "$svc service invokes both the scope and resource gates"
 done
 
+# commerce-web-starter is a generic shared web module: it may depend on commerce-security-common for
+# the exception types its advice maps, but it must never depend on a concrete service. A service
+# import here would make the shared starter no longer reusable across services.
+starter_base="commerce-web-starter/src/main/java/com/example/commerce/web"
+assert_no_import "$starter_base" \
+  "^import com\.example\.commerce\.(cart|catalog|order|payment)\." \
+  "ARCH-STARTER-GENERIC" "commerce-web-starter must not import any service package; it stays a generic shared web module"
+pass "ARCH-STARTER-GENERIC" "commerce-web-starter imports no service package (generic shared web module)"
+
 # Frontend SPA: the browser token boundary, enforced structurally on app source.
 # Complements frontend/src/architecture.test.ts (vitest, run by verify-frontend.sh): this is
 # fast, static, dependency-free, and runs inside verify-all without pnpm or a live stack.

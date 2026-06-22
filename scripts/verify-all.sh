@@ -76,6 +76,7 @@ check_absent_in HARNESS-NO-NPM-RANGES '"[~^*]' \
 
 sh scripts/verify-architecture.sh
 sh scripts/verify-commerce-security-common.sh
+sh scripts/verify-commerce-web-starter.sh
 sh scripts/verify-spicedb-static.sh
 SMOKE_SKIP_DISCOVERY=1 sh authorization-server/tests/smoke.sh
 sh scripts/verify-cart-service.sh
