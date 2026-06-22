@@ -15,6 +15,7 @@ import { fetchMe, type User } from "@/auth";
 import {
   fetchCart,
   fetchCatalogProducts,
+  fetchOrder,
   fetchProduct,
   type Cart
 } from "@/lib/commerce";
@@ -23,7 +24,8 @@ export const queryKeys = {
   me: ["me"] as const,
   catalog: ["catalog"] as const,
   product: (productId: string) => ["catalog", "product", productId] as const,
-  cart: ["cart"] as const
+  cart: ["cart"] as const,
+  order: (orderId: string) => ["orders", orderId] as const
 };
 
 // --- queryOptions factories ------------------------------------------------
@@ -56,6 +58,16 @@ export function cartQueryOptions() {
   return queryOptions({
     queryKey: queryKeys.cart,
     queryFn: ({ signal }) => fetchCart(signal)
+  });
+}
+
+// The order confirmation read. Mirrors productQueryOptions: the /orders/$orderId
+// route loader prefetches with ensureQueryData(orderQueryOptions(id)) and the
+// route component reads the same cache entry via useSuspenseQuery.
+export function orderQueryOptions(orderId: string) {
+  return queryOptions({
+    queryKey: queryKeys.order(orderId),
+    queryFn: ({ signal }) => fetchOrder(orderId, signal)
   });
 }
 

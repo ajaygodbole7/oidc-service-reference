@@ -7,24 +7,31 @@ import {
   createRoute,
   createRouter
 } from "@tanstack/react-router";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ProductDetail } from "@/components/ProductDetail";
-import type { CatalogProduct } from "@/lib/commerce";
+import type { Cart, CatalogProduct } from "@/lib/commerce";
 
-// ProductDetail renders <Link to="/">, which reads router context, so even the
-// "pure" props-driven test needs a RouterProvider. We mount the element under
-// test at the root of a throwaway in-memory router — no real routes, no query.
-// That keeps the component decoupled from the app router while still satisfying
-// the <Link> context dependency.
+// ProductDetail renders <Link to="/"> (router context) and an Add-to-cart
+// Action that reads the TanStack Query cache (useQueryClient), so the props-
+// driven test needs BOTH a RouterProvider and a QueryClientProvider. We mount
+// the element under test at the root of a throwaway in-memory router — no real
+// routes — wrapped in a fresh QueryClient.
 function renderInRouter(children: ReactNode) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } }
+  });
   const rootRoute = createRootRoute({ component: () => children });
   const router = createRouter({
     routeTree: rootRoute,
     history: createMemoryHistory({ initialEntries: ["/"] })
   });
-  return render(<RouterProvider router={router as never} />);
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router as never} />
+    </QueryClientProvider>
+  );
 }
 
 const sampleProduct: CatalogProduct = {
@@ -38,6 +45,10 @@ const sampleProduct: CatalogProduct = {
 };
 
 describe("ProductDetail (pure presentational)", () => {
+  beforeEach(() => {
+    vi.mocked(addCartItem).mockReset();
+  });
+
   it("renders name, price, description, inventory, and a back link from the loaded product", async () => {
     renderInRouter(<ProductDetail product={sampleProduct} />);
 
@@ -48,6 +59,38 @@ describe("ProductDetail (pure presentational)", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Low stock")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /back to catalog/i })).toHaveAttribute("href", "/");
+  });
+
+  it("Add-to-cart Action posts the product + quantity through addCartItem", async () => {
+    const addedCart: Cart = {
+      id: "cart-1",
+      currency: "USD",
+      items: [
+        { id: "line-1", name: "Aeron Chair", quantity: 2, unitPriceCents: 129900, lineTotalCents: 259800 }
+      ],
+      subtotalCents: 259800,
+      estimatedTaxCents: 0,
+      totalCents: 259800
+    };
+    vi.mocked(addCartItem).mockResolvedValue(addedCart);
+
+    renderInRouter(<ProductDetail product={sampleProduct} />);
+
+    // Wait for the in-memory router to resolve the initial render.
+    await screen.findByText("Aeron Chair");
+
+    // Bump the quantity stepper to 2, then submit the Action.
+    fireEvent.click(screen.getByRole("button", { name: /increase quantity/i }));
+    fireEvent.click(screen.getByRole("button", { name: /add to cart/i }));
+
+    // The Action calls addCartItem with (productId, quantity, unitPriceCents).
+    await waitFor(() => {
+      expect(addCartItem).toHaveBeenCalledWith(sampleProduct.id, 2, sampleProduct.priceCents);
+    });
+    // The button reverts out of its optimistic pending affordance once settled.
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /add to cart/i })).toBeEnabled();
+    });
   });
 });
 
@@ -60,10 +103,10 @@ describe("ProductDetail (pure presentational)", () => {
 // component/pendingComponent/errorComponent.
 vi.mock("@/lib/commerce", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/commerce")>();
-  return { ...actual, fetchProduct: vi.fn() };
+  return { ...actual, fetchProduct: vi.fn(), addCartItem: vi.fn() };
 });
 
-import { fetchProduct } from "@/lib/commerce";
+import { addCartItem, fetchProduct } from "@/lib/commerce";
 import { productQueryOptions } from "@/lib/queries";
 import { Route as ProductRoute } from "@/routes/ProductRoute";
 

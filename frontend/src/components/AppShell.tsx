@@ -3,7 +3,7 @@ import { Link, Outlet } from "@tanstack/react-router";
 import { loginHref, signOut } from "@/auth";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { useMe } from "@/lib/queries";
+import { useCart, useMe } from "@/lib/queries";
 
 // The app shell: brand + nav + the sign-in/sign-out control, then the routed
 // screen via <Outlet/>. The auth control reuses auth.ts exactly as the old
@@ -13,6 +13,14 @@ import { useMe } from "@/lib/queries";
 export function AppShell() {
   const me = useMe();
   const user = me.data ?? null;
+
+  // The shared cart badge. useCart is gated on an authenticated session (never
+  // fires for a guest); its count is the sum of line quantities. The badge
+  // updates OPTIMISTICALLY on add because ProductDetail's Action writes the
+  // cart cache via setQueryData(cartQueryOptions(), …) — this read sees that
+  // write instantly, then the post-add invalidate reconciles it.
+  const cart = useCart(user != null);
+  const itemCount = (cart.data?.items ?? []).reduce((sum, item) => sum + item.quantity, 0);
 
   // React 19 form Action for sign-out. signOut() stays in auth.ts (no token
   // logic moves into the view); the Action just calls it, and React's built-in
@@ -42,8 +50,10 @@ export function AppShell() {
                 </Link>
               </Button>
               <Button asChild variant="ghost" size="sm">
-                <Link to="/cart" activeProps={{ "data-active": "true" }}>
-                  Cart
+                <Link to="/cart" data-testid="cart-nav" activeProps={{ "data-active": "true" }}>
+                  {/* rendering-conditional-render: show the count only when the
+                      cart has items — explicit ternary, never `&&`. */}
+                  {itemCount > 0 ? `Cart (${itemCount})` : "Cart"}
                 </Link>
               </Button>
             </nav>

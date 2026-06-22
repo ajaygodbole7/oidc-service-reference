@@ -11,7 +11,7 @@ import {
   createRouter
 } from "@tanstack/react-router";
 import { AppShell } from "@/components/AppShell";
-import { catalogQueryOptions, productQueryOptions } from "@/lib/queries";
+import { catalogQueryOptions, orderQueryOptions, productQueryOptions } from "@/lib/queries";
 
 export interface RouterContext {
   readonly queryClient: QueryClient;
@@ -44,7 +44,14 @@ const cartRoute = createRoute({
   path: "/cart"
 }).lazy(() => import("@/routes/CartRoute").then((d) => d.Route));
 
-const routeTree = rootRoute.addChildren([catalogRoute, productRoute, cartRoute]);
+const orderRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/orders/$orderId",
+  loader: ({ context, params }) =>
+    context.queryClient.ensureQueryData(orderQueryOptions(params.orderId))
+}).lazy(() => import("@/routes/OrderRoute").then((d) => d.Route));
+
+const routeTree = rootRoute.addChildren([catalogRoute, productRoute, cartRoute, orderRoute]);
 
 export function createAppRouter(queryClient: QueryClient) {
   return createRouter({

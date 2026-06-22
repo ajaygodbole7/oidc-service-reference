@@ -22,6 +22,23 @@ Every session must leave these sections populated:
 
 ## Current slice
 
+Checkout + cart-mutation React 19 Actions — ACCEPTED + PUSHED 2026-06-22. A human-directed FE slice
+built TDD (failing e2e first). Add-to-cart on the product detail page (useActionState Action + a
+min-1 quantity stepper + an optimistic header cart badge via queryClient.setQueryData), a /cart
+checkout form (postal code + payment select; a "Place order" Action minting a crypto.randomUUID()
+Idempotency-Key) -> POST /api/orders/checkout -> a new lazy /orders/$orderId confirmation route, plus a
+per-line Remove Action. All mutations + the order read go through callApi (CSRF + 401->login
+inherited); two genuine useOptimistic uses; React Compiler (no manual memo). New commerce.ts Order
+types/validators + addCartItem/removeCartItem/placeOrder/fetchOrder and orderQueryOptions. Proven by a
+mocked e2e (tests/e2e/checkout.spec.ts) red->green and a self-cleaning live four-gate e2e
+(tests/e2e/checkout-live.spec.ts): login -> add (gates 2/3/4) -> checkout (order->payment S2S +
+idempotency) -> confirmation, ending by emptying alice's cart (checkout reads but does NOT clear it, and
+cart-live needs alice's cart empty). Full acceptance green: verify-live-all 17 SEC + checkout-live +
+pnpm verify 62 + ARCH-FE-TOKEN-BOUNDARY. The live run surfaced a PRE-EXISTING gap (not a regression):
+the cart line echoes the productId as its display name (CartResponse.Item has a TODO to resolve the
+catalog name now that catalog is wired; the cart domain stores only productId/qty/price). Resolving the
+cart line name (FE catalog-join or backend) is the recommended next follow-up.
+
 Frontend modernization + live-battery hardening — ACCEPTED + PUSHED 2026-06-22 (commits d9fe023,
 6e31f0e, 1e66e7a, 858f932). A human-directed slice beyond the PLAN build order. The React SPA was
 re-architected to TanStack Router (code-based, loaders + ensureQueryData, lazy routes, defaultPreload
@@ -122,9 +139,12 @@ the 2026-06-22 frontend modernization, the two live-battery regressions (SecretS
 FE catalog model), and the two backend follow-ups (catalog 409, harness cleanup) are all done, pushed,
 and proven by a full green live battery. Candidate human-directed slices, within the teaching scope
 (NOT the documented-not-built prod hardening — mTLS/SPIFFE, mesh, RFC 8693 token exchange, OpenFGA):
-(a) checkout + cart-mutation React 19 Actions in the new FE — docs/frontend-bff-oidc-practices.md flags
-that useOptimistic + write Actions are not yet exercised (screens are read-only); (b) order-history /
-merchant catalog-management screens (PLAN Product section; the order/catalog backend APIs already exist).
+(a) DONE 2026-06-22 — checkout + cart-mutation React 19 Actions (see Current slice). The live run for it
+surfaced the top remaining FE follow-up: (b) resolve the cart line's display name — it currently echoes
+the productId (CartResponse.Item TODO); a FE catalog-join (the SPA already has the catalog) or a backend
+resolution would show real names. Other candidates: (c) order-history / merchant catalog-management
+screens (PLAN Product section; backend APIs exist); (d) add-to-cart on catalog cards (today it is only on
+the product detail page).
 
 The live SEC harnesses are collapsed into one orchestrated command,
 `scripts/verify-live-all.sh` (the live counterpart to the static `verify-all.sh`): it brings
@@ -1061,3 +1081,18 @@ Append-only, timestamped chronology (newest at the bottom); captures non-commit 
   spec passed, no brick (ended ~2.0 GiB). Tore the stack down; disk recovering via TRIM (~3.2 GiB).
   Reference is feature-complete + FE-modernized with zero outstanding findings; next slice is
   human-directed.
+- 2026-06-22 — Claude — built the checkout + cart-mutation React 19 Actions slice, TDD (failing e2e
+  first). Wrote tests/e2e/checkout.spec.ts (mocked) red, watched it fail for the right reason (no
+  add-to-cart button), then implemented via a focused agent: add-to-cart Action + qty stepper +
+  optimistic header badge (ProductDetail/AppShell), a /cart checkout form + Place-order Action minting a
+  crypto.randomUUID() Idempotency-Key, a lazy /orders/$orderId confirmation route (OrderRoute), a
+  per-line Remove Action, and commerce.ts Order types/validators + addCartItem/removeCartItem/placeOrder/
+  fetchOrder + orderQueryOptions. Self-verified the inner loop (not just the agent's claim): pnpm verify
+  62 tests + bundle 125.2 KB, full mocked playwright suite 5 passed/16 skipped (no cart.spec/auth.spec
+  regression), all new mutations route via callApi (token boundary held). Authored a self-cleaning live
+  four-gate e2e (tests/e2e/checkout-live.spec.ts). The warm live run (images cached, no disk dance) was
+  clean on regression — verify-live-all 17/17 SEC green — and the live e2e caught two things in my own
+  test: (1) it asserted the product NAME in the cart, but the live cart echoes the productId (cart-service
+  TODO; fixed the assertion to the id and logged the follow-up); (2) emptyTheCart raced the cart loading
+  skeleton with a bare count() (fixed to wait for the cart to settle). Re-ran checkout-live green
+  (1 passed). Slice live-accepted; committed + pushed + stack torn down.
