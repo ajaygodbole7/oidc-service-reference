@@ -33,7 +33,7 @@ const cartWithPack = {
   id: "cart-alice",
   currency: "USD",
   items: [
-    { id: "line-1", name: "Camp Pantry Pack", quantity: 1, unitPriceCents: 4299, lineTotalCents: 4299 }
+    { id: "prod-pack", name: "Camp Pantry Pack", quantity: 1, unitPriceCents: 4299, lineTotalCents: 4299 }
   ],
   subtotalCents: 4299,
   estimatedTaxCents: 354,

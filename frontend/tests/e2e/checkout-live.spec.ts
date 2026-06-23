@@ -66,10 +66,9 @@ test("checkout slice: add to cart through the four gates, place order, see confi
   await expect(page.getByTestId("cart-nav")).toContainText("1");
   await page.getByTestId("cart-nav").click();
   await page.waitForURL(/\/cart$/);
-  // The cart line is keyed by product id: the cart domain stores only productId/qty/price, and
-  // CartResponse.Item echoes the product id as the display name (cart-service has a TODO to resolve
-  // the catalog name once catalog is wired). So assert the added product by its id, not its name.
-  await expect(page.getByText(SEEDED_PRODUCT_ID)).toBeVisible();
+  // CartView resolves the line's display name from the catalog (it joins the cart item's product id
+  // to the catalog product), so the cart shows the real product name, not the cart-service id echo.
+  await expect(page.getByText(/starter mug/i)).toBeVisible();
 
   // 3. Check out -> order-service reads the cart (gate-4 CART_READ) -> payment S2S + idempotency.
   await page.getByLabel(/postal code/i).fill("94105");

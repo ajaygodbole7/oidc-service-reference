@@ -9,7 +9,8 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CartView } from "./CartView";
-import type { Cart, Order } from "@/lib/commerce";
+import type { Cart, CatalogProduct, Order } from "@/lib/commerce";
+import { catalogQueryOptions } from "@/lib/queries";
 
 // CartView now owns the React 19 cart-mutation + checkout Actions, so it reads
 // the TanStack Query cache (useQueryClient) and navigates on checkout
@@ -20,7 +21,14 @@ import type { Cart, Order } from "@/lib/commerce";
 
 vi.mock("@/lib/commerce", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/commerce")>();
-  return { ...actual, placeOrder: vi.fn(), removeCartItem: vi.fn() };
+  return {
+    ...actual,
+    placeOrder: vi.fn(),
+    removeCartItem: vi.fn(),
+    // CartItemList reads the catalog (useQuery) to resolve line names; default to an empty
+    // catalog so tests that don't seed it fall back to the item's own name without a real fetch.
+    fetchCatalogProducts: vi.fn(() => Promise.resolve([] as CatalogProduct[]))
+  };
 });
 
 import { placeOrder, removeCartItem } from "@/lib/commerce";
@@ -40,10 +48,15 @@ const SAMPLE_CART: Cart = {
 // Mount the CartView under a real (in-memory) router so useNavigate resolves,
 // plus a fresh QueryClient so the mutation Actions' setQueryData/invalidate
 // calls land somewhere. The router exposes its current location for assertions.
-function renderCart(node: ReactNode) {
+function renderCart(node: ReactNode, seedCatalog?: readonly CatalogProduct[]) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } }
   });
+  // Seed the catalog cache so CartItemList's useQuery resolves line names synchronously
+  // (cache hit, no fetch) when a test exercises the catalog-name join.
+  if (seedCatalog) {
+    queryClient.setQueryData(catalogQueryOptions().queryKey, seedCatalog);
+  }
   const rootRoute = createRootRoute({ component: () => node });
   const router = createRouter({
     routeTree: rootRoute,
@@ -115,6 +128,38 @@ describe("CartView", () => {
     expect(screen.queryByRole("list", { name: /cart items/i })).not.toBeInTheDocument();
     // Checkout is hidden when the cart is empty.
     expect(screen.queryByRole("button", { name: /place order/i })).not.toBeInTheDocument();
+  });
+
+  it("authenticated + loaded: resolves each line's display name from the catalog by product id", async () => {
+    // The cart line's id IS the product id (CartResponse.Item echoes productId as both id and
+    // name). CartItemList joins it against the catalog to show the real product name instead of
+    // the id echo. Seed the catalog so the join resolves synchronously.
+    const cart: Cart = {
+      id: "current",
+      currency: "USD",
+      items: [
+        { id: "PROD-1", name: "PROD-1", quantity: 1, unitPriceCents: 1250, lineTotalCents: 1250 }
+      ],
+      subtotalCents: 1250,
+      estimatedTaxCents: 100,
+      totalCents: 1350
+    };
+    const catalog: CatalogProduct[] = [
+      {
+        id: "PROD-1",
+        name: "Starter Mug",
+        currency: "USD",
+        priceCents: 1250,
+        inventoryStatus: "IN_STOCK"
+      }
+    ];
+
+    renderCart(<CartView authenticated cart={cart} status="success" error={null} />, catalog);
+
+    const list = await screen.findByRole("list", { name: /cart items/i });
+    // The resolved catalog name is shown, not the product-id echo.
+    expect(within(list).getByText("Starter Mug")).toBeInTheDocument();
+    expect(within(list).queryByText("PROD-1")).not.toBeInTheDocument();
   });
 
   it("authenticated + loaded: renders each line item and the money summary", async () => {

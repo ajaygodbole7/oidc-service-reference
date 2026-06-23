@@ -1,6 +1,6 @@
 import { useActionState, useOptimistic, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { loginHref } from "@/auth";
 import {
   placeOrder,
@@ -9,7 +9,7 @@ import {
   type Cart,
   type CartItem
 } from "@/lib/commerce";
-import { cartQueryOptions } from "@/lib/queries";
+import { cartQueryOptions, catalogQueryOptions } from "@/lib/queries";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
@@ -79,6 +79,13 @@ function CartItemList({
   readonly currency: string;
 }) {
   const queryClient = useQueryClient();
+  // Resolve each line's display name from the catalog. The cart stores only productId/qty/price, so
+  // CartResponse echoes the product id as the line name; the SPA already fetches the catalog, so join
+  // item.id (the product id) to the catalog product name here, falling back to the id echo.
+  const { data: catalogProducts } = useQuery(catalogQueryOptions());
+  const nameByProductId = new Map(
+    (catalogProducts ?? []).map((product) => [product.id, product.name])
+  );
   const [, submitRemove, isRemoving] = useActionState<null, FormData>(
     async (_prev, formData) => {
       const productId = String(formData.get("productId") ?? "");
@@ -96,7 +103,7 @@ function CartItemList({
       {items.map((item) => (
         <li key={item.id} className="flex items-baseline justify-between gap-4 py-3">
           <div className="min-w-0">
-            <p className="truncate font-medium">{item.name}</p>
+            <p className="truncate font-medium">{nameByProductId.get(item.id) ?? item.name}</p>
             <p className="text-sm text-muted-foreground tabular-nums">
               {item.quantity} · {formatMoney(item.unitPriceCents, currency)}
             </p>

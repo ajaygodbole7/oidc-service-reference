@@ -22,6 +22,14 @@ Every session must leave these sections populated:
 
 ## Current slice
 
+Cart line name resolution — ACCEPTED 2026-06-23. Closes the cart-name follow-up from the checkout
+slice: CartView's CartItemList now resolves each line's display name by joining the cart item's product
+id against the catalog the SPA already fetches (useQuery(catalogQueryOptions)), falling back to the id
+echo — so the cart shows "Starter Mug", not the productId TSID. FE-only (no cart->catalog backend
+dependency; the cart-service id-echo TODO stands but is masked at the FE). Proven: a CartView component
+test (red->green) + pnpm verify 63; live checkout-live now asserts the resolved name and verify-live-all
+stays 17/17 SEC (no regression from CartView fetching the catalog on /cart).
+
 Checkout + cart-mutation React 19 Actions — ACCEPTED + PUSHED 2026-06-22. A human-directed FE slice
 built TDD (failing e2e first). Add-to-cart on the product detail page (useActionState Action + a
 min-1 quantity stepper + an optimistic header cart badge via queryClient.setQueryData), a /cart
@@ -140,9 +148,8 @@ FE catalog model), and the two backend follow-ups (catalog 409, harness cleanup)
 and proven by a full green live battery. Candidate human-directed slices, within the teaching scope
 (NOT the documented-not-built prod hardening — mTLS/SPIFFE, mesh, RFC 8693 token exchange, OpenFGA):
 (a) DONE 2026-06-22 — checkout + cart-mutation React 19 Actions (see Current slice). The live run for it
-surfaced the top remaining FE follow-up: (b) resolve the cart line's display name — it currently echoes
-the productId (CartResponse.Item TODO); a FE catalog-join (the SPA already has the catalog) or a backend
-resolution would show real names. Other candidates: (c) order-history / merchant catalog-management
+surfaced (b) resolve the cart line's display name — DONE 2026-06-23 via a FE catalog-join in CartView
+(see Current slice). Remaining candidates: (c) order-history / merchant catalog-management
 screens (PLAN Product section; backend APIs exist); (d) add-to-cart on catalog cards (today it is only on
 the product detail page).
 
@@ -1096,3 +1103,11 @@ Append-only, timestamped chronology (newest at the bottom); captures non-commit 
   TODO; fixed the assertion to the id and logged the follow-up); (2) emptyTheCart raced the cart loading
   skeleton with a bare count() (fixed to wait for the cart to settle). Re-ran checkout-live green
   (1 passed). Slice live-accepted; committed + pushed + stack torn down.
+- 2026-06-23 — Claude — closed the cart-name follow-up (FE-only). CartView's CartItemList now resolves
+  each line's display name from the catalog (useQuery(catalogQueryOptions()) + a productId->name map),
+  falling back to the cart-service id echo. TDD: added a CartView component test (seed catalog -> assert
+  the resolved name) red, watched it fail (the line showed the productId echo), implemented the join,
+  green. Updated the mocked checkout.spec (cart item id = productId, so it exercises the join) and
+  switched checkout-live's cart assertion from the productId to the resolved name. pnpm verify 63 (bundle
+  125.3 KB); live: verify-live-all 17/17 SEC (no regression from CartView fetching the catalog on /cart)
+  + checkout-live green (cart shows "Starter Mug"). Committed; stack torn down.
