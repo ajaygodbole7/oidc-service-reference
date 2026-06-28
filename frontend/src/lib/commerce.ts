@@ -9,6 +9,7 @@ import { callApi } from "@/auth";
 
 export type CartItem = {
   readonly id: string;
+  readonly productId: string;
   readonly name: string;
   readonly quantity: number;
   readonly unitPriceCents: number;
@@ -22,6 +23,14 @@ export type Cart = {
   readonly subtotalCents: number;
   readonly estimatedTaxCents: number;
   readonly totalCents: number;
+};
+
+type WireCartItem = Omit<CartItem, "productId"> & {
+  readonly productId?: string;
+};
+
+type WireCart = Omit<Cart, "items"> & {
+  readonly items: readonly WireCartItem[];
 };
 
 export type OrderLine = {
@@ -100,8 +109,8 @@ export async function fetchCart(signal: AbortSignal): Promise<Cart> {
   if (!response.ok) throw new Error(`Cart request failed (${response.status})`);
 
   const body = (await response.json()) as unknown;
-  if (!isCart(body)) throw new Error("Cart response had an unexpected shape");
-  return body;
+  if (!isWireCart(body)) throw new Error("Cart response had an unexpected shape");
+  return normalizeCart(body);
 }
 
 export function emptyCart(): Cart {
@@ -131,8 +140,8 @@ export async function addCartItem(
   if (!response.ok) throw new Error(`Add to cart failed (${response.status})`);
 
   const body = (await response.json()) as unknown;
-  if (!isCart(body)) throw new Error("Cart response had an unexpected shape");
-  return body;
+  if (!isWireCart(body)) throw new Error("Cart response had an unexpected shape");
+  return normalizeCart(body);
 }
 
 export async function removeCartItem(productId: string): Promise<Cart> {
@@ -142,8 +151,8 @@ export async function removeCartItem(productId: string): Promise<Cart> {
   if (!response.ok) throw new Error(`Remove from cart failed (${response.status})`);
 
   const body = (await response.json()) as unknown;
-  if (!isCart(body)) throw new Error("Cart response had an unexpected shape");
-  return body;
+  if (!isWireCart(body)) throw new Error("Cart response had an unexpected shape");
+  return normalizeCart(body);
 }
 
 // Checkout. The Idempotency-Key is minted by the caller (crypto.randomUUID) so
@@ -202,7 +211,7 @@ export function isCatalogProduct(value: unknown): value is CatalogProduct {
   );
 }
 
-export function isCart(value: unknown): value is Cart {
+function isWireCart(value: unknown): value is WireCart {
   if (value === null || typeof value !== "object") return false;
   const cart = value as Record<string, unknown>;
   return (
@@ -244,16 +253,27 @@ function isOrderLine(value: unknown): value is OrderLine {
   );
 }
 
-function isCartItem(value: unknown): value is CartItem {
+function isCartItem(value: unknown): value is WireCartItem {
   if (value === null || typeof value !== "object") return false;
   const item = value as Record<string, unknown>;
   return (
     typeof item.id === "string" &&
+    (item.productId === undefined || typeof item.productId === "string") &&
     typeof item.name === "string" &&
     isNonNegativeInteger(item.quantity) &&
     isNonNegativeInteger(item.unitPriceCents) &&
     isNonNegativeInteger(item.lineTotalCents)
   );
+}
+
+function normalizeCart(cart: WireCart): Cart {
+  return {
+    ...cart,
+    items: cart.items.map((item) => ({
+      ...item,
+      productId: item.productId ?? item.id
+    }))
+  };
 }
 
 function isNonNegativeInteger(value: unknown): value is number {

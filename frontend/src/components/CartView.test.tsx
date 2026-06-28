@@ -37,8 +37,22 @@ const SAMPLE_CART: Cart = {
   id: "current",
   currency: "USD",
   items: [
-    { id: "i1", name: "Filter Coffee", quantity: 2, unitPriceCents: 1250, lineTotalCents: 2500 },
-    { id: "i2", name: "Ceramic Mug", quantity: 1, unitPriceCents: 1800, lineTotalCents: 1800 }
+    {
+      id: "i1",
+      productId: "i1",
+      name: "Filter Coffee",
+      quantity: 2,
+      unitPriceCents: 1250,
+      lineTotalCents: 2500
+    },
+    {
+      id: "i2",
+      productId: "i2",
+      name: "Ceramic Mug",
+      quantity: 1,
+      unitPriceCents: 1800,
+      lineTotalCents: 1800
+    }
   ],
   subtotalCents: 4300,
   estimatedTaxCents: 344,
@@ -131,14 +145,20 @@ describe("CartView", () => {
   });
 
   it("authenticated + loaded: resolves each line's display name from the catalog by product id", async () => {
-    // The cart line's id IS the product id (CartResponse.Item echoes productId as both id and
-    // name). CartItemList joins it against the catalog to show the real product name instead of
-    // the id echo. Seed the catalog so the join resolves synchronously.
+    // id and productId may diverge once the backend grows true line ids. CartItemList joins
+    // productId against the catalog to show the real name.
     const cart: Cart = {
       id: "current",
       currency: "USD",
       items: [
-        { id: "PROD-1", name: "PROD-1", quantity: 1, unitPriceCents: 1250, lineTotalCents: 1250 }
+        {
+          id: "line-1",
+          productId: "PROD-1",
+          name: "PROD-1",
+          quantity: 1,
+          unitPriceCents: 1250,
+          lineTotalCents: 1250
+        }
       ],
       subtotalCents: 1250,
       estimatedTaxCents: 100,
@@ -226,19 +246,36 @@ describe("CartView", () => {
   });
 
   it("Remove control calls removeCartItem with the line product id", async () => {
+    const cart: Cart = {
+      id: "current",
+      currency: "USD",
+      items: [
+        {
+          id: "line-1",
+          productId: "PROD-REMOVE",
+          name: "Filter Coffee",
+          quantity: 2,
+          unitPriceCents: 1250,
+          lineTotalCents: 2500
+        }
+      ],
+      subtotalCents: 2500,
+      estimatedTaxCents: 200,
+      totalCents: 2700
+    };
     vi.mocked(removeCartItem).mockResolvedValue({
-      ...SAMPLE_CART,
-      items: [SAMPLE_CART.items[1]!]
+      ...cart,
+      items: []
     });
 
-    renderCart(<CartView authenticated cart={SAMPLE_CART} status="success" error={null} />);
+    renderCart(<CartView authenticated cart={cart} status="success" error={null} />);
 
     const list = await screen.findByRole("list", { name: /cart items/i });
     const firstItem = within(list).getAllByRole("listitem")[0]!;
     fireEvent.click(within(firstItem).getByRole("button", { name: /remove/i }));
 
     await waitFor(() => {
-      expect(removeCartItem).toHaveBeenCalledWith("i1");
+      expect(removeCartItem).toHaveBeenCalledWith("PROD-REMOVE");
     });
   });
 });

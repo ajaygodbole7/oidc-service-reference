@@ -81,7 +81,7 @@ function CartItemList({
   const queryClient = useQueryClient();
   // Resolve each line's display name from the catalog. The cart stores only productId/qty/price, so
   // CartResponse echoes the product id as the line name; the SPA already fetches the catalog, so join
-  // item.id (the product id) to the catalog product name here, falling back to the id echo.
+  // item.productId to the catalog product name here, falling back to the id echo.
   const { data: catalogProducts } = useQuery(catalogQueryOptions());
   const nameByProductId = new Map(
     (catalogProducts ?? []).map((product) => [product.id, product.name])
@@ -103,7 +103,7 @@ function CartItemList({
       {items.map((item) => (
         <li key={item.id} className="flex items-baseline justify-between gap-4 py-3">
           <div className="min-w-0">
-            <p className="truncate font-medium">{nameByProductId.get(item.id) ?? item.name}</p>
+            <p className="truncate font-medium">{nameByProductId.get(item.productId) ?? item.name}</p>
             <p className="text-sm text-muted-foreground tabular-nums">
               {item.quantity} · {formatMoney(item.unitPriceCents, currency)}
             </p>
@@ -111,7 +111,7 @@ function CartItemList({
           <div className="flex shrink-0 items-center gap-3">
             <span className="tabular-nums">{formatMoney(item.lineTotalCents, currency)}</span>
             <form action={submitRemove}>
-              <input type="hidden" name="productId" value={item.id} />
+              <input type="hidden" name="productId" value={item.productId} />
               <Button type="submit" variant="ghost" size="xs" disabled={isRemoving}>
                 Remove
               </Button>

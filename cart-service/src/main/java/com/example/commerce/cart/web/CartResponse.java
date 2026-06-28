@@ -27,13 +27,21 @@ record CartResponse(
         cents(total));
   }
 
-  record Item(String id, String name, int quantity, long unitPriceCents, long lineTotalCents) {
+  record Item(
+      String id,
+      String productId,
+      String name,
+      int quantity,
+      long unitPriceCents,
+      long lineTotalCents) {
 
     static Item from(CartItem item) {
+      String productId = item.productId().value();
       return new Item(
-          item.productId().value(),
+          productId,
+          productId,
           // TODO: Replace this id echo with the catalog product name when catalog-service is wired.
-          item.productId().value(),
+          productId,
           item.quantity().value(),
           cents(item.unitPrice()),
           cents(item.lineTotal()));

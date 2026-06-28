@@ -1,11 +1,11 @@
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createLazyRoute, Link, useParams } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatMoney, type Order } from "@/lib/commerce";
-import { orderQueryOptions } from "@/lib/queries";
+import { catalogQueryOptions, orderQueryOptions } from "@/lib/queries";
 
 // Order confirmation route. The loader (src/router.tsx) prefetches the order
 // into the Query cache via ensureQueryData(orderQueryOptions(orderId)); this
@@ -28,6 +28,10 @@ function ContinueShopping() {
 }
 
 function OrderConfirmation({ order }: { readonly order: Order }) {
+  const { data: catalogProducts } = useQuery(catalogQueryOptions());
+  const nameByProductId = new Map(
+    (catalogProducts ?? []).map((product) => [product.id, product.name])
+  );
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <ContinueShopping />
@@ -60,7 +64,9 @@ function OrderConfirmation({ order }: { readonly order: Order }) {
                 className="flex items-baseline justify-between gap-4 py-3"
               >
                 <div className="min-w-0">
-                  <p className="truncate font-medium">{line.name ?? line.productId}</p>
+                  <p className="truncate font-medium">
+                    {nameByProductId.get(line.productId) ?? line.name ?? line.productId}
+                  </p>
                   <p className="text-sm text-muted-foreground tabular-nums">
                     {line.quantity} · {formatMoney(line.unitPriceCents, order.currency)}
                   </p>

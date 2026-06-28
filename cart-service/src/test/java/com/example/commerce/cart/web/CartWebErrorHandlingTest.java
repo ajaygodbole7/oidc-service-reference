@@ -73,7 +73,8 @@ class CartWebErrorHandlingTest {
                 """))
         .andExpect(status().isCreated())
         .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
-        .andExpect(jsonPath("$.items[0].id").value("sku-1"));
+        .andExpect(jsonPath("$.items[0].id").value("sku-1"))
+        .andExpect(jsonPath("$.items[0].productId").value("sku-1"));
   }
 
   @Test

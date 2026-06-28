@@ -66,7 +66,14 @@ describe("ProductDetail (pure presentational)", () => {
       id: "cart-1",
       currency: "USD",
       items: [
-        { id: "line-1", name: "Aeron Chair", quantity: 2, unitPriceCents: 129900, lineTotalCents: 259800 }
+        {
+          id: "line-1",
+          productId: sampleProduct.id,
+          name: "Aeron Chair",
+          quantity: 2,
+          unitPriceCents: 129900,
+          lineTotalCents: 259800
+        }
       ],
       subtotalCents: 259800,
       estimatedTaxCents: 0,

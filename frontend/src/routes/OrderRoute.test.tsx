@@ -8,7 +8,7 @@ import {
 } from "@tanstack/react-router";
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Order } from "@/lib/commerce";
+import type { CatalogProduct, Order } from "@/lib/commerce";
 
 // Route-component test: drive the real OrderRoute (loader → useSuspenseQuery) by
 // mocking fetchOrder. Proves the loader-prefetch → suspense-read confirmation
@@ -18,10 +18,10 @@ import type { Order } from "@/lib/commerce";
 // component/pendingComponent/errorComponent.
 vi.mock("@/lib/commerce", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/commerce")>();
-  return { ...actual, fetchOrder: vi.fn() };
+  return { ...actual, fetchCatalogProducts: vi.fn(), fetchOrder: vi.fn() };
 });
 
-import { fetchOrder } from "@/lib/commerce";
+import { fetchCatalogProducts, fetchOrder } from "@/lib/commerce";
 import { orderQueryOptions } from "@/lib/queries";
 import { Route as OrderRoute } from "@/routes/OrderRoute";
 
@@ -33,9 +33,19 @@ const sampleOrder: Order = {
   totalCents: 4653,
   createdAt: "2026-06-22T12:00:00Z",
   lines: [
-    { productId: "prod-pack", name: "Camp Pantry Pack", quantity: 1, unitPriceCents: 4299, lineTotalCents: 4299 }
+    { productId: "prod-pack", quantity: 1, unitPriceCents: 4299, lineTotalCents: 4299 }
   ]
 };
+
+const catalogProducts: CatalogProduct[] = [
+  {
+    id: "prod-pack",
+    name: "Camp Pantry Pack",
+    currency: "USD",
+    priceCents: 4299,
+    inventoryStatus: "IN_STOCK"
+  }
+];
 
 function renderOrderRoute(orderId: string) {
   const queryClient = new QueryClient({
@@ -66,6 +76,8 @@ function renderOrderRoute(orderId: string) {
 
 describe("OrderRoute (confirmation from a loaded order)", () => {
   beforeEach(() => {
+    vi.mocked(fetchCatalogProducts).mockReset();
+    vi.mocked(fetchCatalogProducts).mockResolvedValue(catalogProducts);
     vi.mocked(fetchOrder).mockReset();
   });
 
@@ -79,6 +91,7 @@ describe("OrderRoute (confirmation from a loaded order)", () => {
     expect(screen.getByText("CONFIRMED")).toBeInTheDocument();
     expect(screen.getByText("$46.53")).toBeInTheDocument(); // total
     expect(screen.getByText("Camp Pantry Pack")).toBeInTheDocument();
+    expect(screen.queryByText("prod-pack")).not.toBeInTheDocument();
   });
 
   it("renders the not-found alert when fetchOrder rejects (404)", async () => {

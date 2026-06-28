@@ -12,6 +12,7 @@ const cartFixture = {
   items: [
     {
       id: "line-1",
+      productId: "line-1",
       name: "Trail Coffee",
       quantity: 2,
       unitPriceCents: 1299,
