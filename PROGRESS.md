@@ -22,6 +22,17 @@ Every session must leave these sections populated:
 
 ## Current slice
 
+Cart-line productId + catalog name resolution (end-to-end) — ACCEPTED + PUSHED 2026-06-28 (commit
+9e82829). Codex extended the cart-name follow-up across the boundary: cart-service CartResponse.Item now
+exposes a first-class `productId` field (was only the id echo; CartWebErrorHandlingTest asserts it), and
+the FE consumes it robustly — CartItem gains `productId`, a WireCart/normalizeCart layer derives
+`productId ?? id` (accepts both old and new wire shapes), and BOTH the cart (CartView) and the
+order-confirmation (OrderRoute) screens resolve each line's display name by joining `productId` against
+the catalog the SPA already fetches, falling back to name/id. Supersedes the FE-only join (b86ddbd).
+Validated by a full rerun after a Docker brick recovery (see 2026-06-28 session log): pnpm verify 63,
+root reactor module tests (all 6 modules, Testcontainers), verify-all offline gate, and the live battery
+(verify-live-all 17 SEC + checkout-live resolved-name + SEC-NO-BROWSER-TOKENS) — all green.
+
 Cart line name resolution — ACCEPTED 2026-06-23. Closes the cart-name follow-up from the checkout
 slice: CartView's CartItemList now resolves each line's display name by joining the cart item's product
 id against the catalog the SPA already fetches (useQuery(catalogQueryOptions)), falling back to the id
@@ -1111,3 +1122,19 @@ Append-only, timestamped chronology (newest at the bottom); captures non-commit 
   switched checkout-live's cart assertion from the productId to the resolved name. pnpm verify 63 (bundle
   125.3 KB); live: verify-live-all 17/17 SEC (no regression from CartView fetching the catalog on /cart)
   + checkout-live green (cart shows "Starter Mug"). Committed; stack torn down.
+- 2026-06-28 — Claude — recovered a Docker brick, then validated Codex's uncommitted productId refactor
+  with a full test rerun and committed+pushed it. Brick: host disk hit 1.6 GiB (100%) and the Docker
+  daemon was down (Docker Desktop backend alive but the linuxkit VM had stopped; Docker.raw held ~6 GiB
+  sparse). Recovery: graceful-quit + restart Docker Desktop (daemon back in ~9s), then
+  `docker system prune -af --volumes` (3.2 GB) → host TRIM-recovered 1.6 → 9.3 GiB. Pre-pulled all
+  infra + eclipse-temurin base images (no 404 this time). Reviewed Codex's change (uncommitted, 10
+  files): cart-service CartResponse.Item gains a first-class `productId`; FE WireCart/normalizeCart
+  derives `productId ?? id`; CartView + OrderRoute resolve catalog names by productId — a coherent
+  end-to-end extension of the FE-only join. Full rerun, all green: pnpm verify 63; root reactor
+  `mvnw clean test` BUILD SUCCESS (commerce-security-common, commerce-web-starter, cart/catalog/order/
+  payment, Testcontainers); verify-all offline gate exit 0; live battery (one cold up, infra cached) —
+  verify-live-all 17/17 SEC + checkout-live + SEC-NO-BROWSER-TOKENS all EXIT 0. Committed Codex's 10
+  files as 9e82829, pushed (b86ddbd..9e82829). The cold run drove disk to ~1 GiB; pruned the build cache
+  (kept the 4 GB service+infra images) and let TRIM recover. NOTE: the host is chronically ~99% full —
+  always free + TRIM disk before a full live run; it bricked once mid-session and the fix is restart
+  Docker Desktop → prune → wait for TRIM.
