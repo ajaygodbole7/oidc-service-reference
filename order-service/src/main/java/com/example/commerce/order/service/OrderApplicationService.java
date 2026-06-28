@@ -138,6 +138,17 @@ public final class OrderApplicationService {
     return new OrderResult(order, List.of(scopeTrace, resourceTrace));
   }
 
+  public List<OrderResult> listOrders(CommercePrincipal principal) {
+    DecisionTrace scopeTrace = scopeAuthorizer.requireScope(principal, ORDERS_READ);
+    return orderRepository.findByOwnerSub(principal.subject()).stream()
+        .map(order -> {
+          DecisionTrace resourceTrace = resourceAuthorizer.requireAllowed(
+              principal, orderResource(order.id()), ORDER_READ);
+          return new OrderResult(order, List.of(scopeTrace, resourceTrace));
+        })
+        .toList();
+  }
+
   public OrderResult cancelOrder(CommercePrincipal principal, OrderId orderId) {
     DecisionTrace scopeTrace = scopeAuthorizer.requireScope(principal, ORDERS_WRITE);
     DecisionTrace resourceTrace = resourceAuthorizer.requireAllowed(principal, orderResource(orderId), ORDER_CANCEL);

@@ -16,6 +16,7 @@ import {
   fetchCart,
   fetchCatalogProducts,
   fetchOrder,
+  fetchOrders,
   fetchProduct,
   type Cart
 } from "@/lib/commerce";
@@ -25,6 +26,7 @@ export const queryKeys = {
   catalog: ["catalog"] as const,
   product: (productId: string) => ["catalog", "product", productId] as const,
   cart: ["cart"] as const,
+  orders: ["orders"] as const,
   order: (orderId: string) => ["orders", orderId] as const
 };
 
@@ -68,6 +70,13 @@ export function orderQueryOptions(orderId: string) {
   return queryOptions({
     queryKey: queryKeys.order(orderId),
     queryFn: ({ signal }) => fetchOrder(orderId, signal)
+  });
+}
+
+export function ordersQueryOptions() {
+  return queryOptions({
+    queryKey: queryKeys.orders,
+    queryFn: ({ signal }) => fetchOrders(signal)
   });
 }
 

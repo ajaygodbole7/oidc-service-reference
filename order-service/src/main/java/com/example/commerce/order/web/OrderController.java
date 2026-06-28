@@ -47,6 +47,11 @@ class OrderController {
     return OrderResponse.from(service.getOrder(principal, new OrderId(orderId)));
   }
 
+  @GetMapping("/api/orders")
+  OrderListResponse orders(@RequestAttribute("commercePrincipal") CommercePrincipal principal) {
+    return OrderListResponse.from(service.listOrders(principal));
+  }
+
   @PostMapping("/api/orders/{orderId}/cancel")
   OrderResponse cancel(
       @RequestAttribute("commercePrincipal") CommercePrincipal principal,

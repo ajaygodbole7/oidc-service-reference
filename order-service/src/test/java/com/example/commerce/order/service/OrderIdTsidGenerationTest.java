@@ -117,6 +117,14 @@ class OrderIdTsidGenerationTest {
     }
 
     @Override
+    public List<Order> findByOwnerSub(String ownerSub) {
+      return orders.values().stream()
+          .filter(order -> order.ownerSub().equals(ownerSub))
+          .map(Order::copy)
+          .toList();
+    }
+
+    @Override
     public Order save(Order order) {
       orders.put(order.id(), order.copy());
       return order.copy();

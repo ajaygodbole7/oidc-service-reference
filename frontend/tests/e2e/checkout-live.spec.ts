@@ -90,6 +90,14 @@ test("checkout slice: add to cart through the four gates, place order, see confi
   expect(browserState).not.toMatch(TOKEN_MATERIAL_RE);
   expect(await page.content()).not.toMatch(TOKEN_MATERIAL_RE);
 
+  // 5b. Order history: the new GET /api/orders endpoint (four gates: session -> JWT -> orders:read
+  // scope -> per-order SpiceDB order:read) lists the just-placed order for the authenticated caller.
+  // Navigate via the Orders nav link (SPA navigation preserves the session — no full-page reload).
+  await page.getByRole("link", { name: "Orders", exact: true }).click();
+  await page.waitForURL(/\/orders$/);
+  await expect(page.getByRole("heading", { name: /^orders$/i })).toBeVisible();
+  await expect(page.getByText(orderId!)).toBeVisible();
+
   // 6. Self-clean: leave alice's cart empty so the cart-live empty-cart case still holds.
   await emptyTheCart(page);
 });

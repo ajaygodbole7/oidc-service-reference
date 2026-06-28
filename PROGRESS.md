@@ -22,6 +22,33 @@ Every session must leave these sections populated:
 
 ## Current slice
 
+Merchant catalog UI + catalog-card quick-add + order history — IMPLEMENTED, LOCAL VERIFIED
+2026-06-28 by Codex; live acceptance is still pending. This pass completed the remaining
+business-app code gaps in sequence:
+- merchant catalog management UI at `/merchant/catalog`, using the existing catalog POST/PUT APIs
+  through React 19 Actions and TanStack Query invalidation;
+- add-to-cart directly on catalog cards through the same `addCartItem`/`callApi` mutation path used by
+  product detail;
+- order history at `/orders`, including a new `GET /api/orders` order-service endpoint, APISIX route,
+  frontend query/route, and catalog-name resolution for order lines.
+
+The order-history backend keeps the four-gate rule visible: `OrderApplicationService.listOrders` checks
+`orders:read`, discovers current-subject candidate orders from Postgres, then runs
+`ResourceAuthorizer` `order:{id}#read@user:{sub}` for each order before returning it. Postgres
+`owner_sub` is discovery/business data, not the fine authorization decision. Verification (Claude,
+independent of Codex's claims): offline re-confirmed — pnpm verify 68/68 and full reactor
+`mvnw clean test` BUILD SUCCESS incl. OrderApplicationServiceTest (listOrders), OrderWebErrorHandlingTest,
+and PostgresOrderRepositoryTest (findByOwnerSub against real Postgres — the derived query the static
+review could not check); plus a live REGRESSION pass — verify-live-all 17/17 SEC, proving the new
+GET /api/orders route + order-repo change did NOT break the four-gate ladder. Security-reviewed: order-list
+authz is scoped to principal.subject() with all four gates intact (no IDOR); FE token boundary held (all
+mutations via callApi); conventions clean; backend<->FE shapes match. The remaining acceptance step is the
+new GET /api/orders BROWSER e2e (extended checkout-live: login -> checkout -> /orders lists the order
+through the gates). It ran but FAILED disk-confounded — the host hit 0 GiB mid-run and /orders bounced to
+/auth/login under ENOSPC (a backend call failing on no-disk, NOT an order-history defect); step 5b was
+hardened to an SPA nav-click and a clean-disk re-run is pending. Committed + pushed on this evidence per
+human direction.
+
 Cart-line productId + catalog name resolution (end-to-end) — ACCEPTED + PUSHED 2026-06-28 (commit
 9e82829). Codex extended the cart-name follow-up across the boundary: cart-service CartResponse.Item now
 exposes a first-class `productId` field (was only the id echo; CartWebErrorHandlingTest asserts it), and
@@ -123,6 +150,13 @@ bearer token, anonymous writes deny, authenticated non-merchant writes deny, and
 writes succeed only through `catalog:write` plus SpiceDB `store:main#manage`.
 
 ## Exact next action
+
+Run the live/local integration acceptance for the new UI/API slice when disk is safe:
+1. Free/trim disk first; the host had about 9 GiB free during implementation.
+2. Bring the stack up once and verify the new APISIX `GET /api/orders` route plus existing catalog write
+   routes.
+3. Add or run a live browser path for merchant create/update, catalog-card quick-add, and `/orders`.
+4. Only then mark this slice accepted and commit the code + this progress update.
 
 Architecture gates are now in place: `scripts/verify-architecture.sh` (wired into
 `verify-all.sh`) enforces the layering invariants by source-import inspection — domain purity,
@@ -249,6 +283,34 @@ watched runs:
       verification remains open.)
 
 ## Verifier status
+
+Merchant catalog UI + catalog-card quick-add + order history local verification, 2026-06-28:
+
+```sh
+git diff --check
+cd frontend && corepack pnpm run typecheck
+cd frontend && corepack pnpm exec vitest run \
+  src/components/CatalogGrid.test.tsx \
+  src/routes/MerchantCatalogRoute.test.tsx \
+  src/routes/OrderHistoryRoute.test.tsx \
+  src/routes/OrderRoute.test.tsx
+cd frontend && corepack pnpm run test
+cd frontend && corepack pnpm run lint
+cd frontend && corepack pnpm run build
+JAVA_HOME=/Users/ajaygodbole/.sdkman/candidates/java/26-amzn \
+  PATH=/Users/ajaygodbole/.sdkman/candidates/java/26-amzn/bin:$PATH \
+  auth-service/mvnw -B -f pom.xml -pl order-service -am -DskipTests test-compile
+JAVA_HOME=/Users/ajaygodbole/.sdkman/candidates/java/26-amzn \
+  PATH=/Users/ajaygodbole/.sdkman/candidates/java/26-amzn/bin:$PATH \
+  auth-service/mvnw -B -f pom.xml -pl order-service -am \
+  -Dtest=OrderApplicationServiceTest,OrderWebErrorHandlingTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test
+```
+
+Results: all commands passed. Notes: frontend commands warn that this shell is on Node 24.x while the
+repo pins Node 26.3.0; lint still reports the two pre-existing shadcn Fast Refresh warnings in
+`frontend/src/components/ui/badge.tsx` and `frontend/src/components/ui/button.tsx`; the first Maven run
+with default Java failed before code on JDK 25, then passed with `JAVA_HOME` set to Java 26.
 
 Frontend modernization + live-battery hardening accepted 2026-06-22:
 
@@ -1138,3 +1200,14 @@ Append-only, timestamped chronology (newest at the bottom); captures non-commit 
   (kept the 4 GB service+infra images) and let TRIM recover. NOTE: the host is chronically ~99% full —
   always free + TRIM disk before a full live run; it bricked once mid-session and the fix is restart
   Docker Desktop → prune → wait for TRIM.
+- 2026-06-28 10:54 PDT — Codex — implemented the remaining business UI/code fixes in sequence without
+  running the Docker live harness. Added merchant catalog management (`/merchant/catalog`) backed by
+  existing catalog POST/PUT APIs and React 19 Actions; added catalog-card quick-add via a new
+  QuickAddToCart Action; added order history (`GET /api/orders` through APISIX + order-service +
+  `/orders` SPA route). Order list preserves the authorization thesis: scope first, owner-sub discovery
+  second, per-order SpiceDB `read` check third; Postgres owner columns do not become gate 4. Local gates
+  green: `git diff --check`; frontend typecheck; affected Vitest files 10/10; full frontend Vitest
+  68/68; frontend lint (2 pre-existing shadcn Fast Refresh warnings only); frontend production build;
+  order-service Java 26 `test-compile`; targeted `OrderApplicationServiceTest` +
+  `OrderWebErrorHandlingTest` 23/23. Live acceptance remains pending because disk was only about 9 GiB
+  free and Docker live runs recently bricked the machine.

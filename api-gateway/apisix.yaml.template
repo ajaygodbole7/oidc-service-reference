@@ -109,6 +109,12 @@ routes:
     upstream_id: order-service
     plugins:
       bff-session: *bff-session-api
+  - id: api-order-list
+    uri: /api/orders
+    methods: [GET]
+    upstream_id: order-service
+    plugins:
+      bff-session: *bff-session-api
   - id: api-order-get
     uri: /api/orders/*
     methods: [GET]

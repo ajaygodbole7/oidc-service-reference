@@ -6,7 +6,7 @@ import {
   createRoute,
   createRouter
 } from "@tanstack/react-router";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CatalogProduct, Order } from "@/lib/commerce";
 
@@ -90,8 +90,10 @@ describe("OrderRoute (confirmation from a loaded order)", () => {
     expect(screen.getByText("ord-001")).toBeInTheDocument();
     expect(screen.getByText("CONFIRMED")).toBeInTheDocument();
     expect(screen.getByText("$46.53")).toBeInTheDocument(); // total
-    expect(screen.getByText("Camp Pantry Pack")).toBeInTheDocument();
-    expect(screen.queryByText("prod-pack")).not.toBeInTheDocument();
+    expect(await screen.findByText("Camp Pantry Pack")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText("prod-pack")).not.toBeInTheDocument();
+    });
   });
 
   it("renders the not-found alert when fetchOrder rejects (404)", async () => {

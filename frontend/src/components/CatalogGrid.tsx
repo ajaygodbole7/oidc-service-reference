@@ -50,7 +50,11 @@ function ProductGrid({
           {/* The compiler memoizes ProductCard; `product` comes referentially
               stable from the query cache, so passing it directly keeps cells
               from re-rendering. */}
-          {renderLink(product.id, <ProductCard product={product} />)}
+          <ProductCard
+            product={product}
+            detailsLink={renderLink(product.id, "View")}
+            quickAdd={true}
+          />
         </li>
       ))}
     </ul>

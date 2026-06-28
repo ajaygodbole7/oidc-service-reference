@@ -69,6 +69,13 @@ export type CatalogProduct = {
   readonly imageUrl?: string;
 };
 
+export type CatalogProductDraft = {
+  readonly sku?: string;
+  readonly name: string;
+  readonly priceCents: number;
+  readonly inventoryStatus: InventoryStatus;
+};
+
 // --- Fetchers ---------------------------------------------------------------
 
 export async function fetchCatalogProducts(signal: AbortSignal): Promise<readonly CatalogProduct[]> {
@@ -188,6 +195,46 @@ export async function fetchOrder(orderId: string, signal: AbortSignal): Promise<
   return body;
 }
 
+export async function fetchOrders(signal: AbortSignal): Promise<readonly Order[]> {
+  const response = await callApi("/api/orders", {
+    headers: { Accept: "application/json" },
+    signal
+  });
+  if (signal.aborted) throw new DOMException("Request aborted", "AbortError");
+  if (!response.ok) throw new Error(`Orders request failed (${response.status})`);
+
+  const body = (await response.json()) as unknown;
+  if (!isOrderList(body)) throw new Error("Orders response had an unexpected shape");
+  return body.orders;
+}
+
+export async function createCatalogProduct(draft: CatalogProductDraft): Promise<CatalogProduct> {
+  const response = await callApi("/api/catalog/products", {
+    method: "POST",
+    body: productDraftBody(draft, true)
+  });
+  if (!response.ok) throw new Error(`Create product failed (${response.status})`);
+
+  const body = (await response.json()) as unknown;
+  if (!isCatalogProduct(body)) throw new Error("Product response had an unexpected shape");
+  return body;
+}
+
+export async function updateCatalogProduct(
+  productId: string,
+  draft: CatalogProductDraft
+): Promise<CatalogProduct> {
+  const response = await callApi(`/api/catalog/products/${encodeURIComponent(productId)}`, {
+    method: "PUT",
+    body: productDraftBody(draft, false)
+  });
+  if (!response.ok) throw new Error(`Update product failed (${response.status})`);
+
+  const body = (await response.json()) as unknown;
+  if (!isCatalogProduct(body)) throw new Error("Product response had an unexpected shape");
+  return body;
+}
+
 // --- Validators -------------------------------------------------------------
 
 function isCatalogResponse(value: unknown): value is { readonly products: readonly CatalogProduct[] } {
@@ -239,6 +286,12 @@ export function isOrder(value: unknown): value is Order {
     Array.isArray(order.lines) &&
     order.lines.every(isOrderLine)
   );
+}
+
+function isOrderList(value: unknown): value is { readonly orders: readonly Order[] } {
+  if (value === null || typeof value !== "object") return false;
+  const list = value as Record<string, unknown>;
+  return Array.isArray(list.orders) && list.orders.every(isOrder);
 }
 
 function isOrderLine(value: unknown): value is OrderLine {
@@ -324,4 +377,16 @@ export function formatMoney(cents: number, currency: string): string {
 // it's the wire shape the backend's BigDecimal unitPrice expects.
 export function formatPriceString(cents: number): string {
   return (cents / 100).toFixed(2);
+}
+
+function productDraftBody(
+  draft: CatalogProductDraft,
+  includeSku: boolean
+): { readonly sku?: string; readonly name: string; readonly price: string; readonly inventoryStatus: InventoryStatus } {
+  return {
+    ...(includeSku && draft.sku !== undefined ? { sku: draft.sku } : {}),
+    name: draft.name,
+    price: formatPriceString(draft.priceCents),
+    inventoryStatus: draft.inventoryStatus
+  };
 }

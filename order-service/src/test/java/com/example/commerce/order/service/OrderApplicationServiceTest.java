@@ -241,6 +241,34 @@ class OrderApplicationServiceTest {
   }
 
   @Test
+  void list_orders_discovers_current_users_orders_then_checks_each_order_resource() {
+    RecordingAuthorizationClient authorizationClient = authorizationClientWithAliceOrderRead();
+    RecordingOrderRepository orderRepository = new RecordingOrderRepository(List.of(
+        aliceOrder(),
+        Order.confirmed(
+            new OrderId("bob-order"),
+            "bob",
+            new CartId("bob-cart"),
+            List.of(new OrderLine(new ProductId("starter-mug"), 1, Money.usd("12.50"))),
+            Money.usd("12.50"),
+            "auth-bob-order",
+            NOW)));
+    OrderApplicationService service = service(
+        orderRepository,
+        cartLookup(),
+        authorizationClient,
+        new RecordingPaymentClient());
+
+    List<OrderResult> results = service.listOrders(principal("alice", "orders:read"));
+
+    assertThat(results)
+        .extracting(result -> result.order().id())
+        .containsExactly(new OrderId("alice-order"));
+    assertThat(authorizationClient.requests())
+        .containsExactly(new CheckRequest("user:alice", "order:alice-order", "read"));
+  }
+
+  @Test
   void support_can_read_when_spicedb_grants_read_but_cannot_cancel_without_cancel_relationship() {
     RecordingAuthorizationClient authorizationClient = recordingClient(new InMemoryAuthorizationClient()
         .grant(SubjectRef.user("support"), ALICE_ORDER, READ));
@@ -491,6 +519,14 @@ class OrderApplicationServiceTest {
     @Override
     public Optional<Order> findById(OrderId orderId) {
       return Optional.ofNullable(orders.get(orderId)).map(Order::copy);
+    }
+
+    @Override
+    public List<Order> findByOwnerSub(String ownerSub) {
+      return orders.values().stream()
+          .filter(order -> order.ownerSub().equals(ownerSub))
+          .map(Order::copy)
+          .toList();
     }
 
     @Override

@@ -56,6 +56,16 @@ export function AppShell() {
                   {itemCount > 0 ? `Cart (${itemCount})` : "Cart"}
                 </Link>
               </Button>
+              <Button asChild variant="ghost" size="sm">
+                <Link to="/orders" activeProps={{ "data-active": "true" }}>
+                  Orders
+                </Link>
+              </Button>
+              <Button asChild variant="ghost" size="sm">
+                <Link to="/merchant/catalog" activeProps={{ "data-active": "true" }}>
+                  Merchant
+                </Link>
+              </Button>
             </nav>
           </div>
 

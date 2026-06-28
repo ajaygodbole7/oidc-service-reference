@@ -43,6 +43,13 @@ public final class PostgresOrderRepository implements OrderRepository {
   }
 
   @Override
+  public List<Order> findByOwnerSub(String ownerSub) {
+    return rows.findByOwnerSubOrderByCreatedAtDescIdDesc(ownerSub).stream()
+        .map(PostgresOrderRepository::toDomain)
+        .toList();
+  }
+
+  @Override
   public Order save(Order order) {
     Optional<OrderRow> existing = rows.findById(order.id().value());
     if (existing.isPresent()) {

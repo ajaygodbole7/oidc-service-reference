@@ -148,6 +148,16 @@ class OrderWebErrorHandlingTest {
   }
 
   @Test
+  void list_orders_returns_current_users_order_projections() throws Exception {
+    mockMvc.perform(get("/api/orders")
+            .requestAttr("commercePrincipal", principal("alice", "orders:read")))
+        .andExpect(status().isOk())
+        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+        .andExpect(jsonPath("$.orders[0].id").value("alice-order"))
+        .andExpect(jsonPath("$.orders[0].lines[0].productId").value("starter-mug"));
+  }
+
+  @Test
   void cancel_order_returns_updated_projection() throws Exception {
     mockMvc.perform(post("/api/orders/alice-order/cancel")
             .requestAttr("commercePrincipal", principal("alice", "orders:write")))
@@ -278,6 +288,14 @@ class OrderWebErrorHandlingTest {
     @Override
     public Optional<Order> findById(OrderId orderId) {
       return Optional.ofNullable(orders.get(orderId)).map(Order::copy);
+    }
+
+    @Override
+    public List<Order> findByOwnerSub(String ownerSub) {
+      return orders.values().stream()
+          .filter(order -> order.ownerSub().equals(ownerSub))
+          .map(Order::copy)
+          .toList();
     }
 
     @Override
