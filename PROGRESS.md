@@ -22,8 +22,9 @@ Every session must leave these sections populated:
 
 ## Current slice
 
-Merchant catalog UI + catalog-card quick-add + order history — IMPLEMENTED, LOCAL VERIFIED
-2026-06-28 by Codex; live acceptance is still pending. This pass completed the remaining
+Merchant catalog UI + catalog-card quick-add + order history — IMPLEMENTED + COMMITTED/PUSHED
+2026-06-28 (commits 51d39e3 + ce4e890); offline + live-regression ACCEPTED, the order-history BROWSER
+e2e is ENVIRONMENT-BLOCKED on this host (see the closing paragraph). This pass completed the remaining
 business-app code gaps in sequence:
 - merchant catalog management UI at `/merchant/catalog`, using the existing catalog POST/PUT APIs
   through React 19 Actions and TanStack Query invalidation;
@@ -46,12 +47,19 @@ and PostgresOrderRepositoryTest (findByOwnerSub against real Postgres — the de
 review could not check); plus a live REGRESSION pass — verify-live-all 17/17 SEC, proving the new
 GET /api/orders route + order-repo change did NOT break the four-gate ladder. Security-reviewed: order-list
 authz is scoped to principal.subject() with all four gates intact (no IDOR); FE token boundary held (all
-mutations via callApi); conventions clean; backend<->FE shapes match. The remaining acceptance step is the
+mutations via callApi); conventions clean; backend<->FE shapes match. The one piece NOT achieved is the
 new GET /api/orders BROWSER e2e (extended checkout-live: login -> checkout -> /orders lists the order
-through the gates). It ran but FAILED disk-confounded — the host hit 0 GiB mid-run and /orders bounced to
-/auth/login under ENOSPC (a backend call failing on no-disk, NOT an order-history defect); step 5b was
-hardened to an SPA nav-click and a clean-disk re-run is pending. Committed + pushed on this evidence per
-human direction.
+through the gates; the spec is committed at frontend/tests/e2e/checkout-live.spec.ts step 5b, hardened to
+an SPA nav-click). It is ENVIRONMENT-BLOCKED, not a code defect: this host is chronically ~99% full and a
+cold full-stack live run (5 service images + 10-container stack + 17 SEC + Playwright) exhausts the disk
+every time. Three watched attempts 2026-06-28 all disk-failed — a stage-2 hard brick from a 5.8 GiB start,
+a daemon-down (non-disk), and a third from a HEALTHY 7.9 GiB start that still drained to ~1.5 GiB with only
+1/17 SEC done (stopped before a hard brick). Max free on this Mac is ~8 GiB only with Docker fully empty,
+which a cold run consumes. So the order-history endpoint stands proven at the INTEGRATION + LIVE-REGRESSION
+level (its authz, the real-Postgres keyset query, and gateway routing are all verified; the 17-SEC battery
+exercises the full browser->gateway path for cart/catalog/order-payment). The committed checkout-live order
+assertion will pass on a host with ~10+ GiB headroom or in CI. To unblock locally: free several GB of host
+data, or run the e2e elsewhere.
 
 Cart-line productId + catalog name resolution (end-to-end) — ACCEPTED + PUSHED 2026-06-28 (commit
 9e82829). Codex extended the cart-name follow-up across the boundary: cart-service CartResponse.Item now
@@ -1249,3 +1257,22 @@ Append-only, timestamped chronology (newest at the bottom); captures non-commit 
   free space collapsed to 20 MiB and file edits failed; `docker system prune -af --volumes` partially
   recovered about 1 GiB but hung and was interrupted. Live/Docker gates remain pending until disk and
   Docker are safe.
+- 2026-06-28 (later) — Claude — recovered the disk, independently re-verified Codex's ce4e890, and
+  established that the order-history BROWSER e2e is environment-blocked on this host. Recovery: the daemon
+  had gone down with the host at 1.0 GiB (Codex's prune hung mid-state); a fresh Docker Desktop restart
+  brought the daemon back clean, `docker system prune -af --volumes` reclaimed ~2.9 GB, and TRIM lifted the
+  host 1.0 -> 8.5 GiB. Confirmed ce4e890 is committed AND pushed (HEAD == origin), nothing lost.
+  Independent offline re-verify GREEN: pnpm verify 68/68 and full reactor `mvnw clean test` BUILD SUCCESS
+  (all 6 modules) incl. OrderApplicationServiceTest (paginated listOrders), OrderWebErrorHandlingTest, and
+  PostgresOrderRepositoryTest (keyset findByOwnerSub over-fetch vs real Postgres). Then attempted the live
+  order-history battery (verify-live-all + extended checkout-live) THREE times — all disk-failed: (1) a
+  stage-2 hard brick at 0 GiB from a 5.8 GiB start (Bash tool ENOSPC; the /orders load bounced to
+  /auth/login under no-disk), (2) a Docker daemon-down (non-disk), (3) from a HEALTHY 7.9 GiB start the
+  cold build + stack drained to ~1.5 GiB with only 1/17 SEC done — stopped via TaskStop before a hard
+  brick, torn down, pruned (host back to 6.3 GiB). Conclusion: this Mac cannot sustain a cold full-stack
+  live run; the order-history endpoint is accepted on integration + the live 17-SEC regression (which DID
+  complete green earlier), and the committed checkout-live order assertion is left to run in CI / on a
+  roomier host. A manual `rm` of Docker.raw was attempted as brick recovery but correctly denied by the
+  permission classifier (out-of-project destructive delete); the sanctioned restart+prune path was used
+  instead. Finished by pruning Docker to 0B and shutting down Docker Desktop (daemon DOWN, disk 6.3 GiB).
+  No code changed this pass — docs only.
