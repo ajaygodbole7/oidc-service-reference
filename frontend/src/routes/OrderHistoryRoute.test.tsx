@@ -77,7 +77,7 @@ describe("OrderHistoryRoute", () => {
   });
 
   it("renders current user's orders with catalog-resolved line names", async () => {
-    vi.mocked(fetchOrders).mockResolvedValue(orders);
+    vi.mocked(fetchOrders).mockResolvedValue({ orders, nextCursor: "next-page" });
 
     renderOrderHistoryRoute();
 
@@ -86,6 +86,7 @@ describe("OrderHistoryRoute", () => {
     expect(screen.getByText("CONFIRMED")).toBeInTheDocument();
     expect(screen.getAllByText("$42.99")).not.toHaveLength(0);
     expect(await screen.findByText("Camp Pantry Pack")).toBeInTheDocument();
+    expect(screen.getByText("More orders are available.")).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.queryByText("prod-pack")).not.toBeInTheDocument();
     });
@@ -93,7 +94,7 @@ describe("OrderHistoryRoute", () => {
   });
 
   it("renders an empty order state", async () => {
-    vi.mocked(fetchOrders).mockResolvedValue([]);
+    vi.mocked(fetchOrders).mockResolvedValue({ orders: [] });
 
     renderOrderHistoryRoute();
 

@@ -12,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 public final class InMemoryOrderRepository implements OrderRepository {
 
@@ -37,10 +38,12 @@ public final class InMemoryOrderRepository implements OrderRepository {
   }
 
   @Override
-  public List<Order> findByOwnerSub(String ownerSub) {
+  public List<Order> findPageByOwnerSub(String ownerSub, @Nullable String afterId, int limit) {
     return orders.values().stream()
         .filter(order -> order.ownerSub().equals(ownerSub))
-        .sorted((left, right) -> right.createdAt().compareTo(left.createdAt()))
+        .filter(order -> afterId == null || order.id().value().compareTo(afterId) < 0)
+        .sorted((left, right) -> right.id().value().compareTo(left.id().value()))
+        .limit(limit)
         .map(Order::copy)
         .toList();
   }

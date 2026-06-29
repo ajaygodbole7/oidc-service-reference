@@ -1,6 +1,6 @@
 // bundle-barrel-imports: import shadcn primitives directly from their files,
 // never via a barrel, so the bundler can tree-shake unused exports.
-import type { ReactNode } from "react";
+import type { ReactElement } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,7 +16,7 @@ import { formatInventoryStatus, formatMoney, type CatalogProduct } from "@/lib/c
 
 type ProductCardProps = {
   readonly product: CatalogProduct;
-  readonly detailsLink?: ReactNode;
+  readonly detailsLink?: ReactElement;
   readonly quickAdd?: boolean;
 };
 

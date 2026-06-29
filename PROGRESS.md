@@ -31,6 +31,10 @@ business-app code gaps in sequence:
   product detail;
 - order history at `/orders`, including a new `GET /api/orders` order-service endpoint, APISIX route,
   frontend query/route, and catalog-name resolution for order lines.
+- follow-up code-review fixes now applied: `GET /api/orders` is keyset-paginated with `limit`,
+  `cursor`, and `nextCursor`; catalog-card quick-add mutates the cached cart line/totals
+  optimistically; `ProductCard` constrains its `detailsLink` to a single `ReactElement` for Radix
+  `asChild`.
 
 The order-history backend keeps the four-gate rule visible: `OrderApplicationService.listOrders` checks
 `orders:read`, discovers current-subject candidate orders from Postgres, then runs
@@ -311,6 +315,29 @@ Results: all commands passed. Notes: frontend commands warn that this shell is o
 repo pins Node 26.3.0; lint still reports the two pre-existing shadcn Fast Refresh warnings in
 `frontend/src/components/ui/badge.tsx` and `frontend/src/components/ui/button.tsx`; the first Maven run
 with default Java failed before code on JDK 25, then passed with `JAVA_HOME` set to Java 26.
+
+Follow-up code-review fixes local verification, 2026-06-28:
+
+```sh
+git diff --check
+cd frontend && corepack pnpm run typecheck
+cd frontend && corepack pnpm exec vitest run \
+  src/components/CatalogGrid.test.tsx \
+  src/routes/OrderHistoryRoute.test.tsx
+JAVA_HOME=/Users/ajaygodbole/.sdkman/candidates/java/26-amzn \
+  PATH=/Users/ajaygodbole/.sdkman/candidates/java/26-amzn/bin:$PATH \
+  auth-service/mvnw -B -f pom.xml -pl order-service -am -DskipTests test-compile
+JAVA_HOME=/Users/ajaygodbole/.sdkman/candidates/java/26-amzn \
+  PATH=/Users/ajaygodbole/.sdkman/candidates/java/26-amzn/bin:$PATH \
+  auth-service/mvnw -B -f pom.xml -pl order-service -am \
+  -Dtest=OrderApplicationServiceTest,OrderWebErrorHandlingTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test
+sh scripts/verify-architecture.sh
+```
+
+Results: all passed. Docker/live verification was not run in this follow-up; disk dropped to 20 MiB
+free during editing, Docker reported build-cache I/O errors, and an aggressive Docker prune partially
+recovered the host to about 1 GiB before hanging and being interrupted.
 
 Frontend modernization + live-battery hardening accepted 2026-06-22:
 
@@ -1211,3 +1238,14 @@ Append-only, timestamped chronology (newest at the bottom); captures non-commit 
   order-service Java 26 `test-compile`; targeted `OrderApplicationServiceTest` +
   `OrderWebErrorHandlingTest` 23/23. Live acceptance remains pending because disk was only about 9 GiB
   free and Docker live runs recently bricked the machine.
+- 2026-06-28 17:01 PDT — Codex — patched the code-review findings from the merchant/catalog-card/order
+  history slice. `GET /api/orders` now uses the shared keyset pagination contract (`limit`, opaque
+  `cursor`, `nextCursor`) via `CursorPaginator`, while still doing scope first, owner-sub discovery
+  second, and per-order SpiceDB read checks third. Catalog-card quick-add now actually updates the
+  cached cart line and totals optimistically before invalidating/refetching. `ProductCard.detailsLink`
+  is now typed as a single `ReactElement` so Radix `Button asChild` cannot receive arbitrary nodes.
+  Verifiers green: frontend typecheck; targeted Vitest 6/6; order-service Java 26 test-compile;
+  targeted order service/controller tests 23/23; architecture gate; `git diff --check`. Disk incident:
+  free space collapsed to 20 MiB and file edits failed; `docker system prune -af --volumes` partially
+  recovered about 1 GiB but hung and was interrupted. Live/Docker gates remain pending until disk and
+  Docker are safe.

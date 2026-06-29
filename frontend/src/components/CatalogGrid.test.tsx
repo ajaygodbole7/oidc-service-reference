@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { ReactNode } from "react";
+import type { ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CatalogGrid, type CatalogGridProps } from "@/components/CatalogGrid";
 import type { CatalogProduct } from "@/lib/commerce";
@@ -18,7 +18,7 @@ import { addCartItem } from "@/lib/commerce";
 // renders the loaded list (which may be empty). The route supplies the real
 // typed TanStack Link; here we supply a plain anchor that encodes the target
 // id, so we can assert the cell links to the product without router context.
-function stubRenderLink(productId: string, children: ReactNode): ReactNode {
+function stubRenderLink(productId: string, children: string): ReactElement {
   return <a href={`/products/${productId}`}>{children}</a>;
 }
 

@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -48,8 +49,11 @@ class OrderController {
   }
 
   @GetMapping("/api/orders")
-  OrderListResponse orders(@RequestAttribute("commercePrincipal") CommercePrincipal principal) {
-    return OrderListResponse.from(service.listOrders(principal));
+  OrderListResponse orders(
+      @RequestAttribute("commercePrincipal") CommercePrincipal principal,
+      @RequestParam(name = "limit", required = false) @Nullable Integer limit,
+      @RequestParam(name = "cursor", required = false) @Nullable String cursor) {
+    return OrderListResponse.from(service.listOrders(principal, limit, cursor));
   }
 
   @PostMapping("/api/orders/{orderId}/cancel")

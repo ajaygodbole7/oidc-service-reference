@@ -12,11 +12,14 @@ import com.example.commerce.security.ResourceAuthorizer;
 import com.example.commerce.security.ResourceRef;
 import com.example.commerce.security.ScopeAuthorizer;
 import com.example.commerce.security.SubjectRef;
+import com.example.commerce.web.pagination.CursorPaginator;
+import com.example.commerce.web.pagination.Page;
 import com.example.commerce.web.tsid.TsidGenerator;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Supplier;
+import org.jspecify.annotations.Nullable;
 
 public final class OrderApplicationService {
 
@@ -33,6 +36,7 @@ public final class OrderApplicationService {
   private final PaymentClient paymentClient;
   private final ScopeAuthorizer scopeAuthorizer;
   private final ResourceAuthorizer resourceAuthorizer;
+  private final CursorPaginator paginator;
   private final Supplier<OrderId> orderIdGenerator;
   private final Clock clock;
 
@@ -44,6 +48,7 @@ public final class OrderApplicationService {
       PaymentClient paymentClient,
       ScopeAuthorizer scopeAuthorizer,
       ResourceAuthorizer resourceAuthorizer,
+      CursorPaginator paginator,
       TsidGenerator tsidGenerator) {
     this(
         orderRepository,
@@ -53,6 +58,7 @@ public final class OrderApplicationService {
         paymentClient,
         scopeAuthorizer,
         resourceAuthorizer,
+        paginator,
         // Reserved up front by the recover-forward state machine; TSID is sortable and replaces UUID.
         () -> new OrderId(tsidGenerator.newId()),
         Clock.systemUTC());
@@ -66,6 +72,7 @@ public final class OrderApplicationService {
       PaymentClient paymentClient,
       ScopeAuthorizer scopeAuthorizer,
       ResourceAuthorizer resourceAuthorizer,
+      CursorPaginator paginator,
       Supplier<OrderId> orderIdGenerator,
       Clock clock) {
     this.orderRepository = orderRepository;
@@ -75,6 +82,7 @@ public final class OrderApplicationService {
     this.paymentClient = paymentClient;
     this.scopeAuthorizer = scopeAuthorizer;
     this.resourceAuthorizer = resourceAuthorizer;
+    this.paginator = paginator;
     this.orderIdGenerator = orderIdGenerator;
     this.clock = clock;
   }
@@ -138,15 +146,21 @@ public final class OrderApplicationService {
     return new OrderResult(order, List.of(scopeTrace, resourceTrace));
   }
 
-  public List<OrderResult> listOrders(CommercePrincipal principal) {
+  public Page<OrderResult> listOrders(
+      CommercePrincipal principal, @Nullable Integer limit, @Nullable String cursor) {
     DecisionTrace scopeTrace = scopeAuthorizer.requireScope(principal, ORDERS_READ);
-    return orderRepository.findByOwnerSub(principal.subject()).stream()
+    int pageSize = paginator.resolveLimit(limit);
+    String afterId = CursorPaginator.decodeCursor(cursor);
+    List<OrderResult> fetched = orderRepository
+        .findPageByOwnerSub(principal.subject(), afterId, pageSize + 1)
+        .stream()
         .map(order -> {
           DecisionTrace resourceTrace = resourceAuthorizer.requireAllowed(
               principal, orderResource(order.id()), ORDER_READ);
           return new OrderResult(order, List.of(scopeTrace, resourceTrace));
         })
         .toList();
+    return CursorPaginator.paginate(fetched, pageSize, result -> result.order().id().value());
   }
 
   public OrderResult cancelOrder(CommercePrincipal principal, OrderId orderId) {

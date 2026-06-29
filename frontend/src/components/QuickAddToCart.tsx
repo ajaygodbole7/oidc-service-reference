@@ -17,7 +17,34 @@ export function QuickAddToCart({ product }: QuickAddToCartProps) {
     setOptimisticAdding(true);
     queryClient.setQueryData<Cart>(cartQueryOptions().queryKey, (current) => {
       const base = current ?? emptyCart();
-      return { ...base, items: [...base.items] };
+      const items = base.items.some((item) => item.productId === product.id)
+        ? base.items.map((item) =>
+            item.productId === product.id
+              ? {
+                  ...item,
+                  quantity: item.quantity + 1,
+                  lineTotalCents: item.lineTotalCents + product.priceCents
+                }
+              : item
+          )
+        : [
+            ...base.items,
+            {
+              id: product.id,
+              productId: product.id,
+              name: product.name,
+              quantity: 1,
+              unitPriceCents: product.priceCents,
+              lineTotalCents: product.priceCents
+            }
+          ];
+      const subtotalCents = items.reduce((sum, item) => sum + item.lineTotalCents, 0);
+      return {
+        ...base,
+        items,
+        subtotalCents,
+        totalCents: subtotalCents + base.estimatedTaxCents
+      };
     });
 
     try {

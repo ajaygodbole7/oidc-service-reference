@@ -56,6 +56,11 @@ export type Order = {
   readonly lines: readonly OrderLine[];
 };
 
+export type OrderPage = {
+  readonly orders: readonly Order[];
+  readonly nextCursor?: string;
+};
+
 export type InventoryStatus = "IN_STOCK" | "LOW_STOCK" | "OUT_OF_STOCK";
 
 export type CatalogProduct = {
@@ -195,7 +200,7 @@ export async function fetchOrder(orderId: string, signal: AbortSignal): Promise<
   return body;
 }
 
-export async function fetchOrders(signal: AbortSignal): Promise<readonly Order[]> {
+export async function fetchOrders(signal: AbortSignal): Promise<OrderPage> {
   const response = await callApi("/api/orders", {
     headers: { Accept: "application/json" },
     signal
@@ -205,7 +210,10 @@ export async function fetchOrders(signal: AbortSignal): Promise<readonly Order[]
 
   const body = (await response.json()) as unknown;
   if (!isOrderList(body)) throw new Error("Orders response had an unexpected shape");
-  return body.orders;
+  return {
+    orders: body.orders,
+    ...(body.nextCursor !== undefined && body.nextCursor !== null ? { nextCursor: body.nextCursor } : {})
+  };
 }
 
 export async function createCatalogProduct(draft: CatalogProductDraft): Promise<CatalogProduct> {
@@ -288,10 +296,14 @@ export function isOrder(value: unknown): value is Order {
   );
 }
 
-function isOrderList(value: unknown): value is { readonly orders: readonly Order[] } {
+function isOrderList(value: unknown): value is OrderPage {
   if (value === null || typeof value !== "object") return false;
   const list = value as Record<string, unknown>;
-  return Array.isArray(list.orders) && list.orders.every(isOrder);
+  return (
+    Array.isArray(list.orders) &&
+    list.orders.every(isOrder) &&
+    (list.nextCursor === undefined || list.nextCursor === null || typeof list.nextCursor === "string")
+  );
 }
 
 function isOrderLine(value: unknown): value is OrderLine {

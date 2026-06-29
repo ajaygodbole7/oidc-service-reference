@@ -24,6 +24,8 @@ import com.example.commerce.security.ResourceAuthorizer;
 import com.example.commerce.security.ResourceRef;
 import com.example.commerce.security.ScopeAuthorizer;
 import com.example.commerce.security.SubjectRef;
+import com.example.commerce.web.pagination.CursorPaginator;
+import com.example.commerce.web.pagination.Page;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -33,6 +35,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 class OrderApplicationServiceTest {
@@ -259,11 +262,12 @@ class OrderApplicationServiceTest {
         authorizationClient,
         new RecordingPaymentClient());
 
-    List<OrderResult> results = service.listOrders(principal("alice", "orders:read"));
+    Page<OrderResult> page = service.listOrders(principal("alice", "orders:read"), 1, null);
 
-    assertThat(results)
+    assertThat(page.items())
         .extracting(result -> result.order().id())
         .containsExactly(new OrderId("alice-order"));
+    assertThat(page.nextCursor()).isNull();
     assertThat(authorizationClient.requests())
         .containsExactly(new CheckRequest("user:alice", "order:alice-order", "read"));
   }
@@ -336,6 +340,7 @@ class OrderApplicationServiceTest {
         paymentClient,
         new ScopeAuthorizer(),
         new ResourceAuthorizer(authorizationClient),
+        new CursorPaginator(20, 100),
         () -> new OrderId("generated-order"),
         Clock.fixed(NOW, ZoneOffset.UTC));
   }
@@ -522,9 +527,12 @@ class OrderApplicationServiceTest {
     }
 
     @Override
-    public List<Order> findByOwnerSub(String ownerSub) {
+    public List<Order> findPageByOwnerSub(String ownerSub, @Nullable String afterId, int limit) {
       return orders.values().stream()
           .filter(order -> order.ownerSub().equals(ownerSub))
+          .filter(order -> afterId == null || order.id().value().compareTo(afterId) < 0)
+          .sorted((left, right) -> right.id().value().compareTo(left.id().value()))
+          .limit(limit)
           .map(Order::copy)
           .toList();
     }

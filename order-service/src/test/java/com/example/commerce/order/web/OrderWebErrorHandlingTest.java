@@ -37,6 +37,7 @@ import com.example.commerce.security.ScopeAuthorizer;
 import com.example.commerce.security.SubjectRef;
 import com.example.commerce.web.error.CommerceErrorProperties;
 import com.example.commerce.web.error.GlobalExceptionHandler;
+import com.example.commerce.web.pagination.CursorPaginator;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -45,6 +46,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -67,6 +69,7 @@ class OrderWebErrorHandlingTest {
       new RecordingPaymentClient(),
       new ScopeAuthorizer(),
       new ResourceAuthorizer(new AllowingAuthorizationClient()),
+      new CursorPaginator(20, 100),
       () -> new OrderId("generated-order"),
       Clock.fixed(NOW, ZoneOffset.UTC));
   private final MockMvc mockMvc = MockMvcBuilders
@@ -148,13 +151,15 @@ class OrderWebErrorHandlingTest {
   }
 
   @Test
-  void list_orders_returns_current_users_order_projections() throws Exception {
+  void list_orders_returns_current_users_paginated_order_projections() throws Exception {
     mockMvc.perform(get("/api/orders")
+            .param("limit", "1")
             .requestAttr("commercePrincipal", principal("alice", "orders:read")))
         .andExpect(status().isOk())
         .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
         .andExpect(jsonPath("$.orders[0].id").value("alice-order"))
-        .andExpect(jsonPath("$.orders[0].lines[0].productId").value("starter-mug"));
+        .andExpect(jsonPath("$.orders[0].lines[0].productId").value("starter-mug"))
+        .andExpect(jsonPath("$.nextCursor").value(CursorPaginator.encodeCursor("alice-order")));
   }
 
   @Test
@@ -291,9 +296,12 @@ class OrderWebErrorHandlingTest {
     }
 
     @Override
-    public List<Order> findByOwnerSub(String ownerSub) {
+    public List<Order> findPageByOwnerSub(String ownerSub, @Nullable String afterId, int limit) {
       return orders.values().stream()
           .filter(order -> order.ownerSub().equals(ownerSub))
+          .filter(order -> afterId == null || order.id().value().compareTo(afterId) < 0)
+          .sorted((left, right) -> right.id().value().compareTo(left.id().value()))
+          .limit(limit)
           .map(Order::copy)
           .toList();
     }

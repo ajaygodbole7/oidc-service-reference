@@ -43,8 +43,8 @@ public final class PostgresOrderRepository implements OrderRepository {
   }
 
   @Override
-  public List<Order> findByOwnerSub(String ownerSub) {
-    return rows.findByOwnerSubOrderByCreatedAtDescIdDesc(ownerSub).stream()
+  public List<Order> findPageByOwnerSub(String ownerSub, @Nullable String afterId, int limit) {
+    return rows.findPageByOwnerSub(ownerSub, afterId, limit).stream()
         .map(PostgresOrderRepository::toDomain)
         .toList();
   }

@@ -1,6 +1,6 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createLazyRoute, Link, type ErrorComponentProps } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import type { ReactElement } from "react";
 import { CatalogGrid } from "@/components/CatalogGrid";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -17,7 +17,7 @@ import { catalogQueryOptions } from "@/lib/queries";
 // We supply the typed TanStack `Link` so cells navigate to
 // /products/$productId with param-encoded ids; the grid itself stays
 // router-free and unit-testable.
-function renderProductLink(productId: string, children: ReactNode): ReactNode {
+function renderProductLink(productId: string, children: string): ReactElement {
   return (
     <Link
       to="/products/$productId"

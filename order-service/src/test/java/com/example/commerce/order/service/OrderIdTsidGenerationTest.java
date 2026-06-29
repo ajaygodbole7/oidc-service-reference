@@ -20,12 +20,14 @@ import com.example.commerce.security.ResourceAuthorizer;
 import com.example.commerce.security.ResourceRef;
 import com.example.commerce.security.ScopeAuthorizer;
 import com.example.commerce.security.SubjectRef;
+import com.example.commerce.web.pagination.CursorPaginator;
 import com.example.commerce.web.tsid.TsidGenerator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -49,6 +51,7 @@ class OrderIdTsidGenerationTest {
         paymentClient,
         new ScopeAuthorizer(),
         new ResourceAuthorizer(new AllowingAuthorizationClient()),
+        new CursorPaginator(20, 100),
         tsid);
 
     OrderResult result = service.checkout(
@@ -76,6 +79,7 @@ class OrderIdTsidGenerationTest {
         new RecordingPaymentClient(),
         new ScopeAuthorizer(),
         new ResourceAuthorizer(new AllowingAuthorizationClient()),
+        new CursorPaginator(20, 100),
         tsid);
 
     OrderResult first = service.checkout(
@@ -117,9 +121,12 @@ class OrderIdTsidGenerationTest {
     }
 
     @Override
-    public List<Order> findByOwnerSub(String ownerSub) {
+    public List<Order> findPageByOwnerSub(String ownerSub, @Nullable String afterId, int limit) {
       return orders.values().stream()
           .filter(order -> order.ownerSub().equals(ownerSub))
+          .filter(order -> afterId == null || order.id().value().compareTo(afterId) < 0)
+          .sorted((left, right) -> right.id().value().compareTo(left.id().value()))
+          .limit(limit)
           .map(Order::copy)
           .toList();
     }

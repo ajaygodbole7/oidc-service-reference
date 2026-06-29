@@ -19,6 +19,7 @@ import com.example.commerce.security.CommerceJwtValidator;
 import com.example.commerce.security.ResourceAuthorizer;
 import com.example.commerce.security.ScopeAuthorizer;
 import com.example.commerce.security.SpiceDbAuthorizationClient;
+import com.example.commerce.web.pagination.CursorPaginator;
 import com.example.commerce.web.tsid.TsidGenerator;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -99,6 +100,7 @@ class OrderConfig {
       PaymentClient paymentClient,
       ScopeAuthorizer scopeAuthorizer,
       ResourceAuthorizer resourceAuthorizer,
+      CursorPaginator cursorPaginator,
       TsidGenerator tsidGenerator) {
     // Reserve-then-claim: a fresh OrderId is minted up front (TSID, sortable) and the idempotency
     // claim races on it; the recover-forward state machine keeps the SAME reserved id on replay.
@@ -110,6 +112,7 @@ class OrderConfig {
         paymentClient,
         scopeAuthorizer,
         resourceAuthorizer,
+        cursorPaginator,
         tsidGenerator);
   }
 }

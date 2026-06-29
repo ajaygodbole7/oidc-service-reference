@@ -9,7 +9,8 @@ import { formatMoney, type Order } from "@/lib/commerce";
 import { catalogQueryOptions, ordersQueryOptions } from "@/lib/queries";
 
 function OrderHistoryScreen() {
-  const { data: orders } = useSuspenseQuery(ordersQueryOptions());
+  const { data: orderPage } = useSuspenseQuery(ordersQueryOptions());
+  const orders = orderPage.orders;
   const { data: catalogProducts } = useQuery(catalogQueryOptions());
   const nameByProductId = new Map(
     (catalogProducts ?? []).map((product) => [product.id, product.name])
@@ -27,6 +28,9 @@ function OrderHistoryScreen() {
       </header>
       <Separator />
       {orders.length === 0 ? <EmptyOrders /> : <OrderList orders={orders} nameByProductId={nameByProductId} />}
+      {orderPage.nextCursor !== undefined ? (
+        <p className="text-sm text-muted-foreground">More orders are available.</p>
+      ) : null}
     </section>
   );
 }

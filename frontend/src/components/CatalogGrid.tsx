@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactElement } from "react";
 // bundle-barrel-imports: import each shadcn primitive directly from its file so
 // the bundler can tree-shake — never via a barrel.
 import { ProductCard } from "@/components/ProductCard";
@@ -15,7 +15,7 @@ import type { CatalogProduct } from "@/lib/commerce";
 // out of this file's types avoids coupling the grid to the router's generics.
 export type CatalogGridProps = {
   readonly products: readonly CatalogProduct[];
-  readonly renderLink: (productId: string, children: ReactNode) => ReactNode;
+  readonly renderLink: (productId: string, children: string) => ReactElement;
 };
 
 // rendering-content-visibility: each off-screen cell skips layout/paint until it
@@ -41,7 +41,7 @@ function ProductGrid({
   renderLink
 }: {
   readonly products: readonly CatalogProduct[];
-  readonly renderLink: (productId: string, children: ReactNode) => ReactNode;
+  readonly renderLink: (productId: string, children: string) => ReactElement;
 }) {
   return (
     <ul aria-label="Products" className={GRID_CLASS}>
