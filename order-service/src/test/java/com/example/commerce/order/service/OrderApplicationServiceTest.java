@@ -299,6 +299,39 @@ class OrderApplicationServiceTest {
   }
 
   @Test
+  void list_orders_hasMore_is_determined_before_spicedb_filter_not_after() {
+    // pageSize=1: repository fetches 2 rows (hasMore=true). alice-order has a SpiceDB grant;
+    // alice-00-order (the +1 sentinel, lexically lower) is orphaned. Before this fix,
+    // filterAllowed was called on all rows including the sentinel, reducing the filtered list
+    // to 1 item which equals limit, so paginate incorrectly returned nextCursor=null.
+    RecordingOrderRepository orderRepository = new RecordingOrderRepository(List.of(
+        aliceOrder(),
+        Order.confirmed(
+            new OrderId("alice-00-order"),
+            "alice",
+            new CartId("alice-cart"),
+            List.of(new OrderLine(new ProductId("starter-mug"), 1, Money.usd("12.50"))),
+            Money.usd("12.50"),
+            "auth-alice-00",
+            NOW)));
+    RecordingAuthorizationClient authorizationClient = authorizationClientWithAliceOrderRead();
+    OrderApplicationService service = service(
+        orderRepository,
+        cartLookup(),
+        authorizationClient,
+        new RecordingPaymentClient());
+
+    Page<OrderResult> page = service.listOrders(principal("alice", "orders:read"), 1, null);
+
+    assertThat(page.items())
+        .extracting(result -> result.order().id())
+        .containsExactly(new OrderId("alice-order"));
+    assertThat(page.nextCursor()).isNotNull();
+    assertThat(authorizationClient.requests())
+        .containsExactly(new CheckRequest("user:alice", "order:alice-order", "read"));
+  }
+
+  @Test
   void support_can_read_when_spicedb_grants_read_but_cannot_cancel_without_cancel_relationship() {
     RecordingAuthorizationClient authorizationClient = recordingClient(new InMemoryAuthorizationClient()
         .grant(SubjectRef.user("support"), ALICE_ORDER, READ));

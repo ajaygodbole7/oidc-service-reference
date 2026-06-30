@@ -151,16 +151,19 @@ public final class OrderApplicationService {
     DecisionTrace scopeTrace = scopeAuthorizer.requireScope(principal, ORDERS_READ);
     int pageSize = paginator.resolveLimit(limit);
     String afterId = CursorPaginator.decodeCursor(cursor);
-    List<OrderResult> fetched = orderRepository
-        .findPageByOwnerSub(principal.subject(), afterId, pageSize + 1)
+    List<Order> rawRows = orderRepository.findPageByOwnerSub(principal.subject(), afterId, pageSize + 1);
+    boolean hasMore = rawRows.size() > pageSize;
+    List<OrderResult> items = (hasMore ? rawRows.subList(0, pageSize) : rawRows)
         .stream()
         .flatMap(order -> resourceAuthorizer
             .filterAllowed(principal, orderResource(order.id()), ORDER_READ)
-            .map(resourceTrace -> java.util.stream.Stream.of(
-                new OrderResult(order, List.of(scopeTrace, resourceTrace))))
-            .orElseGet(java.util.stream.Stream::empty))
+            .map(resourceTrace -> new OrderResult(order, List.of(scopeTrace, resourceTrace)))
+            .stream())
         .toList();
-    return CursorPaginator.paginate(fetched, pageSize, result -> result.order().id().value());
+    String nextCursor = hasMore && !items.isEmpty()
+        ? CursorPaginator.encodeCursor(items.get(items.size() - 1).order().id().value())
+        : null;
+    return new Page<>(items, nextCursor);
   }
 
   public OrderResult cancelOrder(CommercePrincipal principal, OrderId orderId) {
