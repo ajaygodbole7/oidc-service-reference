@@ -6,7 +6,7 @@ import {
   createRoute,
   createRouter
 } from "@tanstack/react-router";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CatalogProduct, Order } from "@/lib/commerce";
 
@@ -104,5 +104,21 @@ describe("OrderHistoryRoute", () => {
 
     expect(await screen.findByText("No orders yet")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /browse catalog/i })).toHaveAttribute("href", "/");
+  });
+
+  it("does not show the empty state while cursor pages remain", async () => {
+    vi.mocked(fetchOrders)
+      .mockResolvedValueOnce({ items: [], nextCursor: "next-page" })
+      .mockResolvedValueOnce({ items: orders });
+
+    renderOrderHistoryRoute();
+
+    expect(await screen.findByText("More orders are available.")).toBeInTheDocument();
+    expect(screen.queryByText("No orders yet")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /load more orders/i }));
+
+    expect(await screen.findByText("ord-001")).toBeInTheDocument();
+    expect(vi.mocked(fetchOrders)).toHaveBeenLastCalledWith(expect.any(AbortSignal), "next-page");
   });
 });

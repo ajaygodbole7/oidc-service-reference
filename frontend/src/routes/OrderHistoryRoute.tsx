@@ -20,6 +20,7 @@ function OrderHistoryScreen() {
   const allPages = [firstPage, ...extraPages];
   const orders = allPages.flatMap((p) => p.items);
   const nextCursor = allPages.at(-1)?.nextCursor;
+  const hasMorePages = nextCursor !== undefined;
   const nameByProductId = new Map(catalogProducts.map((p) => [p.id, p.name]));
 
   async function handleLoadMore() {
@@ -44,12 +45,14 @@ function OrderHistoryScreen() {
         </p>
       </header>
       <Separator />
-      {orders.length === 0 ? (
+      {orders.length === 0 && !hasMorePages ? (
         <EmptyOrders />
+      ) : orders.length === 0 ? (
+        <p className="text-sm text-muted-foreground">More orders are available.</p>
       ) : (
         <OrderList orders={orders} nameByProductId={nameByProductId} />
       )}
-      {nextCursor !== undefined ? (
+      {hasMorePages ? (
         <Button
           variant="outline"
           size="sm"
