@@ -5,12 +5,7 @@ import {
   type Cookie,
   type Page
 } from "@playwright/test";
-
-const APP_ORIGIN = "http://127.0.0.1:5173";
-const REALM_NAME = "oidc-service-reference";
-const KEYCLOAK_AUTH_RE = new RegExp(
-  `realms\\/${REALM_NAME}\\/protocol\\/openid-connect\\/auth`
-);
+import { APP_ORIGIN, KEYCLOAK_AUTH_RE, loginAs } from "./helpers";
 
 type BrowserStorageState = {
   readonly localStorage: Record<string, string>;
@@ -155,19 +150,7 @@ function installResponseBodyTokenGuard(page: Page): { assertClean: () => Promise
 }
 
 async function loginAsAlice(page: Page): Promise<void> {
-  await page.goto("/");
-  await page.getByRole("link", { name: /sign in/i }).click();
-  await page.waitForURL(KEYCLOAK_AUTH_RE);
-  await page.fill("#username", "alice");
-  await page.fill("#password", "alice");
-  await Promise.all([
-    page.waitForURL(`${APP_ORIGIN}/`),
-    page.click("#kc-login")
-  ]);
-  // The routed AppShell renders the user's name + a "Sign out" button when
-  // authenticated (it no longer renders "signed in as"). The Sign out button is
-  // present iff a session exists, so it is the user-agnostic authenticated marker.
-  await expect(page.getByRole("button", { name: /sign out/i })).toBeVisible();
+  await loginAs(page, "alice");
 }
 
 test("anonymous home shows sign-in entry without browser-side tokens", async ({

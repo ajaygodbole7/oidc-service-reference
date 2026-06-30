@@ -1,36 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
-
-const APP_ORIGIN = "http://127.0.0.1:5173";
-const REALM_NAME = "oidc-service-reference";
-const KEYCLOAK_AUTH_RE = new RegExp(
-  `realms\\/${REALM_NAME}\\/protocol\\/openid-connect\\/auth`
-);
-
-// Same token-material guard the cart live suite uses: no access/refresh/id token
-// or JWT-shaped string may ever appear in a browser-visible response body.
-const TOKEN_MATERIAL_RE =
-  /\b(?:access_token|refresh_token|id_token)\b|[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}/i;
-
-// Canonical product TSID for the seeded "starter-mug" product (catalog now mints
-// TSIDs; ids are no longer human slugs).
-const STARTER_MUG_ID = "6801HWW000000";
+import { KEYCLOAK_AUTH_RE, TOKEN_MATERIAL_RE, SEEDED_MUG_ID, loginAs } from "./helpers";
 
 type FetchResult = { readonly status: number; readonly body: string };
-
-async function loginAs(page: Page, username: string, password: string = username): Promise<void> {
-  await page.goto("/");
-  await page.getByRole("link", { name: /sign in/i }).click();
-  await page.waitForURL(KEYCLOAK_AUTH_RE);
-  await page.fill("#username", username);
-  await page.fill("#password", password);
-  await Promise.all([
-    page.waitForURL(`${APP_ORIGIN}/`),
-    page.click("#kc-login")
-  ]);
-  // Authenticated marker in the routed AppShell: the "Sign out" button (present
-  // iff a session exists). The header no longer renders "signed in as".
-  await expect(page.getByRole("button", { name: /sign out/i })).toBeVisible();
-}
 
 async function csrfHeaders(page: Page): Promise<Record<string, string>> {
   const csrf = await page.evaluate(() => {
@@ -79,7 +50,7 @@ test("SEC-CATALOG-ANONYMOUS-READ-ONLY: anonymous can read but cannot write", asy
   expect(list.status).toBe(200);
   expect(list.body).not.toMatch(TOKEN_MATERIAL_RE);
 
-  const detail = await apiFetch(page, `/api/catalog/products/${STARTER_MUG_ID}`);
+  const detail = await apiFetch(page, `/api/catalog/products/${SEEDED_MUG_ID}`);
   expect(detail.status).toBe(200);
   expect(detail.body).not.toMatch(TOKEN_MATERIAL_RE);
 

@@ -3,6 +3,7 @@ package com.example.commerce.security;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
@@ -68,6 +69,39 @@ class AuthorizerPrimitivesTest {
           assertThat(decision.allowed()).isFalse();
           assertThat(decision.reason()).isEqualTo("relationship_missing");
         });
+  }
+
+  @Test
+  void filter_allowed_returns_present_when_granted() {
+    InMemoryAuthorizationClient client = new InMemoryAuthorizationClient()
+        .grant(SubjectRef.user("alice"), CART, new Permission("read"));
+    ResourceAuthorizer authorizer = new ResourceAuthorizer(client);
+
+    Optional<DecisionTrace> result = authorizer.filterAllowed(ALICE, CART, new Permission("read"));
+
+    assertThat(result).isPresent();
+    assertThat(result.get().allowed()).isTrue();
+  }
+
+  @Test
+  void filter_allowed_returns_empty_when_relationship_missing() {
+    ResourceAuthorizer authorizer = new ResourceAuthorizer(new InMemoryAuthorizationClient());
+
+    Optional<DecisionTrace> result = authorizer.filterAllowed(ALICE, CART, new Permission("read"));
+
+    assertThat(result).isEmpty();
+  }
+
+  @Test
+  void filter_allowed_still_fails_closed_when_client_unavailable() {
+    AuthorizationClient unavailable = (subject, resource, permission) -> {
+      throw new AuthorizationUnavailableException("SpiceDB unavailable", null);
+    };
+
+    assertThatThrownBy(() -> new ResourceAuthorizer(unavailable)
+        .filterAllowed(ALICE, CART, new Permission("read")))
+        .isInstanceOf(AuthorizationDeniedException.class)
+        .hasMessageContaining("unavailable");
   }
 
   @Test

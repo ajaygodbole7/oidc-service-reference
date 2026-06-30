@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { TOKEN_MATERIAL_RE, SEEDED_MUG_ID, loginAs } from "./helpers";
 
 // Live four-gate acceptance for the checkout + cart-mutation slice. Drives the REAL UI through
 // APISIX against the running stack: the add-to-cart Action -> cart-service (gates 2/3/4), the
@@ -9,26 +10,6 @@ import { expect, test, type Page } from "@playwright/test";
 // requires alice's cart to be empty (the cart harness keeps alice/bob carts across runs). So this
 // test starts and ends by removing every line (which also exercises the remove-item Action) and
 // re-asserts the token boundary across the new flows.
-
-const APP_ORIGIN = "http://127.0.0.1:5173";
-const REALM_NAME = "oidc-service-reference";
-const KEYCLOAK_AUTH_RE = new RegExp(`realms\\/${REALM_NAME}\\/protocol\\/openid-connect\\/auth`);
-const TOKEN_MATERIAL_RE =
-  /\b(?:access_token|refresh_token|id_token)\b|[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}/i;
-
-// Canonical Flyway seed product (V1__create_products.sql; the id is asserted in
-// PostgresProductRepositoryTest as MUG_ID -> sku MUG-001, "Starter Mug").
-const SEEDED_PRODUCT_ID = "6801HWW000000";
-
-async function loginAs(page: Page, username: string, password: string = username): Promise<void> {
-  await page.goto("/");
-  await page.getByRole("link", { name: /sign in/i }).click();
-  await page.waitForURL(KEYCLOAK_AUTH_RE);
-  await page.fill("#username", username);
-  await page.fill("#password", password);
-  await Promise.all([page.waitForURL(`${APP_ORIGIN}/`), page.click("#kc-login")]);
-  await expect(page.getByRole("button", { name: /sign out/i })).toBeVisible();
-}
 
 // Remove every line through the UI so alice's cart returns to empty.
 async function emptyTheCart(page: Page): Promise<void> {
@@ -57,7 +38,7 @@ test("checkout slice: add to cart through the four gates, place order, see confi
   await emptyTheCart(page);
 
   // 1. Add a real seeded product from its detail page -> POST /api/cart/items (gates 2/3/4).
-  await page.goto(`/products/${SEEDED_PRODUCT_ID}`);
+  await page.goto(`/products/${SEEDED_MUG_ID}`);
   await expect(page.getByRole("button", { name: /add to cart/i })).toBeVisible();
   await expect(page.getByText(/starter mug/i)).toBeVisible();
   await page.getByRole("button", { name: /add to cart/i }).click();

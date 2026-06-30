@@ -154,11 +154,11 @@ public final class OrderApplicationService {
     List<OrderResult> fetched = orderRepository
         .findPageByOwnerSub(principal.subject(), afterId, pageSize + 1)
         .stream()
-        .map(order -> {
-          DecisionTrace resourceTrace = resourceAuthorizer.requireAllowed(
-              principal, orderResource(order.id()), ORDER_READ);
-          return new OrderResult(order, List.of(scopeTrace, resourceTrace));
-        })
+        .flatMap(order -> resourceAuthorizer
+            .filterAllowed(principal, orderResource(order.id()), ORDER_READ)
+            .map(resourceTrace -> java.util.stream.Stream.of(
+                new OrderResult(order, List.of(scopeTrace, resourceTrace))))
+            .orElseGet(java.util.stream.Stream::empty))
         .toList();
     return CursorPaginator.paginate(fetched, pageSize, result -> result.order().id().value());
   }

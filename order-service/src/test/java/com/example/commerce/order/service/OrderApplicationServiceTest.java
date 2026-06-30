@@ -273,6 +273,32 @@ class OrderApplicationServiceTest {
   }
 
   @Test
+  void list_orders_filters_out_orders_where_spicedb_denies_read() {
+    RecordingOrderRepository orderRepository = new RecordingOrderRepository(List.of(
+        aliceOrder(),
+        Order.confirmed(
+            new OrderId("alice-orphaned-order"),
+            "alice",
+            new CartId("alice-cart"),
+            List.of(new OrderLine(new ProductId("starter-mug"), 1, Money.usd("12.50"))),
+            Money.usd("12.50"),
+            "auth-orphaned",
+            NOW)));
+    RecordingAuthorizationClient authorizationClient = authorizationClientWithAliceOrderRead();
+    OrderApplicationService service = service(
+        orderRepository,
+        cartLookup(),
+        authorizationClient,
+        new RecordingPaymentClient());
+
+    Page<OrderResult> page = service.listOrders(principal("alice", "orders:read"), 10, null);
+
+    assertThat(page.items())
+        .extracting(result -> result.order().id())
+        .containsExactly(new OrderId("alice-order"));
+  }
+
+  @Test
   void support_can_read_when_spicedb_grants_read_but_cannot_cancel_without_cancel_relationship() {
     RecordingAuthorizationClient authorizationClient = recordingClient(new InMemoryAuthorizationClient()
         .grant(SubjectRef.user("support"), ALICE_ORDER, READ));
