@@ -285,6 +285,47 @@ watched runs:
 
 ## Verifier status
 
+listOrders pagination correctness fix — ACCEPTED + COMMITTED 2026-06-30 (commit e4a0537):
+
+Code-review finding #1 from the previous session: `listOrders` ran `filterAllowed` on all
+`pageSize+1` rows including the sentinel, so SpiceDB-denied rows could shrink the list past
+`pageSize` and `CursorPaginator.paginate` would return false `nextCursor=null`. Fix: detect
+`hasMore` from raw row count before filtering; only pass the first `pageSize` rows through
+`filterAllowed`; build `nextCursor` manually via `CursorPaginator.encodeCursor`. Also switched
+to `Optional.stream()` (Java 9+). Regression test added:
+`list_orders_hasMore_is_determined_before_spicedb_filter_not_after` — passes alice's sentinel
+(no SpiceDB relation) and one SpiceDB-granted row with pageSize=1; asserts nextCursor is not null
+and only one SpiceDB check is made (sentinel excluded).
+
+All live E2E tests re-run after fix + SpiceDB reseed:
+
+```sh
+# Re-seed SpiceDB (in-memory, empty after stack restart)
+JAVA_HOME=$HOME/.sdkman/candidates/java/26.0.1-amzn \
+  SPICEDB_LIVE_TEST=true \
+  SPICEDB_TARGET=127.0.0.1:50051 \
+  SPICEDB_PRESHARED_KEY=LOCAL_DEV_SPICEDB_PRESHARED_KEY__CHANGE_BEFORE_DEPLOY \
+  sh scripts/verify-commerce-security-common.sh
+# Clean stale test products and restart APISIX
+docker compose exec -T postgres psql -U commerce -d catalog_db -c "DELETE FROM products WHERE sku LIKE 'SKU-%'"
+docker compose restart apisix
+# Run all live E2E tests
+PATH="$HOME/.nvm/versions/node/v22.22.3/bin:$PATH" \
+  E2E_FULL_STACK=1 \
+  corepack pnpm exec playwright test \
+    tests/e2e/auth.spec.ts tests/e2e/cart-live.spec.ts tests/e2e/catalog-live.spec.ts \
+    tests/e2e/checkout-live.spec.ts tests/e2e/order-live.spec.ts --reporter=line
+```
+
+Results: 10/10 passed, 8 skipped (harness-controlled scenarios: spicedb-unavailable,
+test-fixture, dynamic-ownership, non-commerce-aud, missing-scope). All five previously
+failing tests are green. Unit tests: 60/60 order-service. Fix ACCEPTED.
+
+Note: when running E2E tests directly (not via `verify-live-all.sh`), SpiceDB must be seeded
+first by running `verify-commerce-security-common.sh` with `SPICEDB_LIVE_TEST=true` — the
+in-memory datastore is empty after any stack restart. The full `verify-live-all.sh` handles
+this automatically via `verify-cart-spicedb-live.sh` in each sub-harness.
+
 Merchant catalog UI + order history ACCEPTED 2026-06-29 (OrbStack host, 132 GiB free):
 
 ```sh
