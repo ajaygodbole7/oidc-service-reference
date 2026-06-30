@@ -23,19 +23,20 @@ Every session must leave these sections populated:
 ## Current slice
 
 Code-review N+1 / security fixes — ACCEPTED + COMMITTED/PUSHED 2026-06-29/30 (commit 2e7b690 +
-ESLint fix). A full `/code-review` pass on `origin/master~8...HEAD` surfaced 10 confirmed findings;
-all were fixed and verified live:
+ESLint fix), plus the 2026-06-30 cursor-leak/null-cursor follow-up. A full `/code-review` pass on
+`origin/master~8...HEAD` surfaced 10 confirmed findings; all were fixed and verified live:
 
 1. **SpiceDB-before-Postgres (fail-closed ordering)** — `completeClaimedCheckout` now writes the
    SpiceDB `order#owner` relationship BEFORE the `@Transactional` Postgres commit, so a SpiceDB
    outage throws before the order is persisted (no orphaned unreachable orders).
-2. **SpiceDB as sole list authority** — removed `WHERE owner_sub = :ownerSub` from
-   `OrderRowRepository.findPage`; `OrderRepository` interface renamed `findPageByOwnerSub` →
-   `findPage`. SpiceDB `filterAllowed` is now the only membership gate; Postgres `owner_sub` is
-   business data only, not authorization.
-3. **Cursor encodes last fetched row** — `listOrders` cursor now always encodes the last fetched
-   row's id (`window.get(window.size()-1)`), not the last SpiceDB-allowed id, so pagination advances
-   correctly past a page of fully-denied rows.
+2. **Order-history cursor leak closed** — `GET /api/orders` is current-user order history, not a
+   global support search. `owner_sub` narrows the candidate cursor window so `nextCursor` cannot
+   encode another user's denied order id; SpiceDB `filterAllowed` still gates every candidate row,
+   so the database predicate is not authorization.
+3. **Cursor encodes last fetched candidate row** — `listOrders` cursor encodes the last fetched
+   current-subject candidate id (`window.get(window.size()-1)`), not the last SpiceDB-allowed id,
+   so pagination advances correctly past a page of fully-denied same-owner rows without exposing
+   unrelated resource ids.
 4. **Cursor non-null when `hasMore`** — cursor emitted whenever `hasMore=true` and `lastFetchedId`
    is non-null, regardless of how many rows passed SpiceDB, so clients can always advance.
 5. **`OrderListResponse` wire rename** — `List<OrderResponse> orders` → `List<OrderResponse> items`
@@ -56,12 +57,14 @@ all were fixed and verified live:
 11. **ESLint: unused `KEYCLOAK_AUTH_RE` imports** — removed from `auth.spec.ts`,
     `cart-live.spec.ts`, `catalog-live.spec.ts`, `order-live.spec.ts` (4 files, pre-existing lint
     errors surfaced by `verify-frontend.sh`).
+12. **Order-history null cursor accepted** — frontend `fetchOrders` accepts backend
+    `nextCursor: null` on the last page and normalizes it away.
 
 New tests added (order-service):
-- `list_orders_spicedb_not_sql_is_the_authority_for_list_membership`
-- `list_orders_support_user_sees_order_when_spicedb_grants_cross_user_read`
+- `list_orders_uses_owner_candidate_filter_then_spicedb_gate`
+- `list_orders_is_current_user_history_not_global_support_search`
 - `checkout_spicedb_failure_before_postgres_persist_does_not_commit_order`
-- `list_orders_cursor_encodes_last_fetched_row_not_last_allowed_row`
+- `list_orders_cursor_does_not_expose_other_subject_order_ids`
 
 Cart-line productId + catalog name resolution (end-to-end) — ACCEPTED + PUSHED 2026-06-28 (commit
 9e82829). Codex extended the cart-name follow-up across the boundary: cart-service CartResponse.Item now

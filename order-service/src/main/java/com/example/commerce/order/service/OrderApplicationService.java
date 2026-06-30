@@ -155,8 +155,9 @@ public final class OrderApplicationService {
     DecisionTrace scopeTrace = scopeAuthorizer.requireScope(principal, ORDERS_READ);
     int pageSize = paginator.resolveLimit(limit);
     String afterId = CursorPaginator.decodeCursor(cursor);
-    // No SQL ownership filter — SpiceDB is the sole list-membership authority (AGENTS.md invariant).
-    List<Order> rawRows = orderRepository.findPage(afterId, pageSize + 1);
+    // owner_sub narrows the current-user history cursor window so cursors never expose
+    // unrelated order ids. SpiceDB remains the read authority for every candidate row.
+    List<Order> rawRows = orderRepository.findPageByOwnerSub(principal.subject(), afterId, pageSize + 1);
     boolean hasMore = rawRows.size() > pageSize;
     List<Order> window = hasMore ? rawRows.subList(0, pageSize) : rawRows;
     // Cursor encodes the last *fetched* row, not the last SpiceDB-allowed item, so denied rows

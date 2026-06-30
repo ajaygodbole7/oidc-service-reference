@@ -38,8 +38,9 @@ public final class InMemoryOrderRepository implements OrderRepository {
   }
 
   @Override
-  public List<Order> findPage(@Nullable String afterId, int limit) {
+  public List<Order> findPageByOwnerSub(String ownerSub, @Nullable String afterId, int limit) {
     return orders.values().stream()
+        .filter(order -> order.ownerSub().equals(ownerSub))
         .filter(order -> afterId == null || order.id().value().compareTo(afterId) < 0)
         .sorted((left, right) -> right.id().value().compareTo(left.id().value()))
         .limit(limit)

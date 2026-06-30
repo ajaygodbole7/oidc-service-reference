@@ -245,10 +245,9 @@ class OrderApplicationServiceTest {
   }
 
   @Test
-  void list_orders_spicedb_not_sql_is_the_authority_for_list_membership() {
-    // Both alice's and bob's orders are fetched from DB (no SQL ownership filter).
-    // SpiceDB grants alice read on her own order only — bob's order is filtered out by SpiceDB,
-    // not by a WHERE owner_sub clause. This proves the AGENTS.md invariant holds.
+  void list_orders_uses_owner_candidate_filter_then_spicedb_gate() {
+    // owner_sub narrows the order-history candidate set so cursors never expose unrelated order ids.
+    // SpiceDB still gates every returned candidate, so the database predicate is not authorization.
     RecordingAuthorizationClient authorizationClient = authorizationClientWithAliceOrderRead();
     RecordingOrderRepository orderRepository = new RecordingOrderRepository(List.of(
         aliceOrder(),
@@ -272,15 +271,12 @@ class OrderApplicationServiceTest {
         .extracting(result -> result.order().id())
         .containsExactly(new OrderId("alice-order"));
     assertThat(page.nextCursor()).isNull();
-    // Both orders are presented to SpiceDB — the SQL layer does not pre-filter by owner.
     assertThat(authorizationClient.requests())
-        .containsExactlyInAnyOrder(
-            new CheckRequest("user:alice", "order:alice-order", "read"),
-            new CheckRequest("user:alice", "order:bob-order", "read"));
+        .containsExactly(new CheckRequest("user:alice", "order:alice-order", "read"));
   }
 
   @Test
-  void list_orders_support_user_sees_order_when_spicedb_grants_cross_user_read() {
+  void list_orders_is_current_user_history_not_global_support_search() {
     RecordingAuthorizationClient authorizationClient = recordingClient(
         new InMemoryAuthorizationClient()
             .grant(SubjectRef.user("support"), ALICE_ORDER, READ));
@@ -290,11 +286,9 @@ class OrderApplicationServiceTest {
 
     Page<OrderResult> page = service.listOrders(principal("support", "orders:read"), 10, null);
 
-    assertThat(page.items())
-        .extracting(result -> result.order().id())
-        .containsExactly(new OrderId("alice-order"));
-    assertThat(authorizationClient.requests())
-        .containsExactly(new CheckRequest("user:support", "order:alice-order", "read"));
+    assertThat(page.items()).isEmpty();
+    assertThat(page.nextCursor()).isNull();
+    assertThat(authorizationClient.requests()).isEmpty();
   }
 
   @Test
@@ -332,29 +326,31 @@ class OrderApplicationServiceTest {
   }
 
   @Test
-  void list_orders_cursor_encodes_last_fetched_row_not_last_allowed_row() {
-    // "zzz-alice-order" sorts first in descending order but has no SpiceDB grant.
-    // The cursor must encode "zzz-alice-order" (last fetched), not "alice-order" (last allowed),
-    // so the next page does not re-fetch the already-processed denied row.
+  void list_orders_cursor_does_not_expose_other_subject_order_ids() {
+    // bob's order sorts first globally but must not enter alice's cursor window at all.
+    // The next cursor can only be derived from alice-owned candidates.
     RecordingAuthorizationClient authorizationClient = authorizationClientWithAliceOrderRead();
     RecordingOrderRepository orderRepository = new RecordingOrderRepository(List.of(
         aliceOrder(),
         Order.confirmed(
-            new OrderId("zzz-alice-order"),
-            "alice",
-            new CartId("alice-cart"),
+            new OrderId("zzz-bob-order"),
+            "bob",
+            new CartId("bob-cart"),
             List.of(new OrderLine(new ProductId("starter-mug"), 1, Money.usd("12.50"))),
             Money.usd("12.50"),
-            "auth-zzz",
+            "auth-bob-zzz",
             NOW)));
     OrderApplicationService service = service(
         orderRepository, cartLookup(), authorizationClient, new RecordingPaymentClient());
 
     Page<OrderResult> page = service.listOrders(principal("alice", "orders:read"), 1, null);
 
-    assertThat(page.items()).isEmpty();
-    assertThat(page.nextCursor()).isNotNull();
-    assertThat(CursorPaginator.decodeCursor(page.nextCursor())).isEqualTo("zzz-alice-order");
+    assertThat(page.items())
+        .extracting(result -> result.order().id())
+        .containsExactly(new OrderId("alice-order"));
+    assertThat(page.nextCursor()).isNull();
+    assertThat(authorizationClient.requests())
+        .containsExactly(new CheckRequest("user:alice", "order:alice-order", "read"));
   }
 
   @Test
@@ -671,8 +667,9 @@ class OrderApplicationServiceTest {
     }
 
     @Override
-    public List<Order> findPage(@Nullable String afterId, int limit) {
+    public List<Order> findPageByOwnerSub(String ownerSub, @Nullable String afterId, int limit) {
       return orders.values().stream()
+          .filter(order -> order.ownerSub().equals(ownerSub))
           .filter(order -> afterId == null || order.id().value().compareTo(afterId) < 0)
           .sorted((left, right) -> right.id().value().compareTo(left.id().value()))
           .limit(limit)

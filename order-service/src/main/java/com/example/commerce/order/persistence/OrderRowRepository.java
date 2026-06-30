@@ -12,11 +12,13 @@ public interface OrderRowRepository extends CrudRepository<OrderRow, String> {
   @Query("""
       SELECT *
       FROM orders
-      WHERE (:afterId IS NULL OR id < :afterId)
+      WHERE owner_sub = :ownerSub
+        AND (:afterId IS NULL OR id < :afterId)
       ORDER BY id DESC
       LIMIT :limit
       """)
-  List<OrderRow> findPage(
+  List<OrderRow> findPageByOwnerSub(
+      @Param("ownerSub") String ownerSub,
       @Param("afterId") @Nullable String afterId,
       @Param("limit") int limit);
 }
