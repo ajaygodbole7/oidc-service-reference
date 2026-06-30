@@ -774,13 +774,15 @@ verification.
 ## Session handoff
 
 All PLAN slices are accepted and fully live-verified. The merchant catalog UI + catalog-card quick-add +
-order history slice is now ACCEPTED on this host (OrbStack runtime, 132 GiB free) with `checkout-live`
-step 5b green and all 17 SEC gates green (verify-live-all EXIT 0, 2026-06-29). No outstanding slices or
-findings. The reference is feature-complete. The next loop is a new feature on human direction; grounded
-candidates are in Exact next action. Keep the four gates visible in code and traces; Postgres owner
-columns are not authorization. The Docker runtime on this host is now OrbStack
-(`~/.orbstack/run/docker.sock`); set DOCKER_HOST + TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE accordingly for
-Testcontainers runs.
+order history slice is ACCEPTED on this host (OrbStack runtime, 132 GiB free). Two follow-up defects
+from that slice are also fixed and committed (86e6d06, 8a42407): the `CommercePrincipalFilter` trailing-
+slash bug (GET /api/orders bypassed gate 2 → 401) and the `listOrders` `requireAllowed` → `filterAllowed`
+fix (orders orphaned by SpiceDB restart no longer throw 403 on the list endpoint; fail-closed for
+unavailability still holds). e2e test helpers consolidated into `frontend/tests/e2e/helpers.ts`. Stack
+is currently UP (live run just completed). Tear down with `sh scripts/down.sh` when done. The Docker
+runtime on this host is OrbStack (`~/.orbstack/run/docker.sock`); set DOCKER_HOST +
+TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE accordingly for Testcontainers runs.
+No outstanding slices or findings. The reference is feature-complete. Next work is on human direction.
 
 ## Session log
 
@@ -1287,4 +1289,17 @@ Append-only, timestamped chronology (newest at the bottom); captures non-commit 
   attribute, and `GlobalExceptionHandler` mapped the resulting `ServletRequestBindingException` to 401.
   Fix: guard changed to `!(path.equals("/api/orders") || path.startsWith("/api/orders/"))`.
   `checkout-live.spec.ts` 1/1 passed (step 5b: login → checkout → Orders link → `/orders` shows order);
-  `LIVE_ALL_SKIP_UP=1 verify-live-all` EXIT 0, all 17 SEC gates green. Slice ACCEPTED and committed.
+  `LIVE_ALL_SKIP_UP=1 verify-live-all` EXIT 0, all 17 SEC gates green. Slice ACCEPTED and committed (86e6d06).
+- 2026-06-29 — Claude — fixed a second live-run defect and deduplicated e2e test helpers (commit 8a42407).
+  Defect: after `SEC-SPICEDB-UNAVAILABLE` stops and restarts SpiceDB (in-memory datastore), orders created
+  before the restart lose their SpiceDB owner relationships. `listOrders` was calling `requireAllowed`
+  (throws on any deny), so a second `checkout-live` run after `verify-live-all` got a 403 on `GET /api/orders`.
+  Fix: added `ResourceAuthorizer.filterAllowed` — returns `Optional.empty()` when SpiceDB says
+  `relationship_missing` (silent filter for collection endpoints), still throws on `authorization_unavailable`
+  (fail-closed invariant preserved). Updated `OrderApplicationService.listOrders` to use `filterAllowed`
+  with `flatMap`/`Stream.empty()` filtering. Proven by 3 new unit tests in `AuthorizerPrimitivesTest`
+  (13 total) and 1 new integration test in `OrderApplicationServiceTest` (13 total).
+  Also extracted the copy-pasted `APP_ORIGIN`, `REALM_NAME`, `KEYCLOAK_AUTH_RE`, `TOKEN_MATERIAL_RE`,
+  `SEEDED_MUG_ID`, and `loginAs` from all five live e2e specs into `frontend/tests/e2e/helpers.ts`.
+  Full acceptance: `checkout-live.spec.ts` 1/1 passed; `LIVE_ALL_SKIP_UP=1 verify-live-all` EXIT 0,
+  all 17 SEC gates green. Stack still up; tear down when done.
