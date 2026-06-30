@@ -22,32 +22,46 @@ Every session must leave these sections populated:
 
 ## Current slice
 
-Merchant catalog UI + catalog-card quick-add + order history — ACCEPTED + COMMITTED/PUSHED
-2026-06-28/29 (commits 51d39e3 + ce4e890 + fix applied 2026-06-29). This pass completed the remaining
-business-app code gaps in sequence:
-- merchant catalog management UI at `/merchant/catalog`, using the existing catalog POST/PUT APIs
-  through React 19 Actions and TanStack Query invalidation;
-- add-to-cart directly on catalog cards through the same `addCartItem`/`callApi` mutation path used by
-  product detail;
-- order history at `/orders`, including a new `GET /api/orders` order-service endpoint, APISIX route,
-  frontend query/route, and catalog-name resolution for order lines.
-- follow-up code-review fixes now applied: `GET /api/orders` is keyset-paginated with `limit`,
-  `cursor`, and `nextCursor`; catalog-card quick-add mutates the cached cart line/totals
-  optimistically; `ProductCard` constrains its `detailsLink` to a single `ReactElement` for Radix
-  `asChild`.
+Code-review N+1 / security fixes — ACCEPTED + COMMITTED/PUSHED 2026-06-29/30 (commit 2e7b690 +
+ESLint fix). A full `/code-review` pass on `origin/master~8...HEAD` surfaced 10 confirmed findings;
+all were fixed and verified live:
 
-The order-history backend keeps the four-gate rule visible: `OrderApplicationService.listOrders` checks
-`orders:read`, discovers current-subject candidate orders from Postgres, then runs
-`ResourceAuthorizer` `order:{id}#read@user:{sub}` for each order before returning it. Postgres
-`owner_sub` is discovery/business data, not the fine authorization decision. Full acceptance proven
-2026-06-29 on this host after migrating from Docker Desktop to OrbStack (132 GiB free): the
-`checkout-live.spec.ts` step 5b (login → checkout → click Orders link → `/orders` shows the new order)
-passed in 9.9 s and `LIVE_ALL_SKIP_UP=1 verify-live-all` exited 0 with all 17 SEC gates green.
-Root cause of the earlier 401 on `GET /api/orders`: `CommercePrincipalFilter.shouldNotFilter` used
-`path.startsWith("/api/orders/")` (trailing slash), so the list endpoint `/api/orders` (no slash) bypassed
-the filter; bff-session injected the bearer but `@RequestAttribute("commercePrincipal")` was null, and
-`GlobalExceptionHandler.handleServletRequestBindingException` mapped that to 401. Fixed by changing the
-guard to `!(path.equals("/api/orders") || path.startsWith("/api/orders/"))`.
+1. **SpiceDB-before-Postgres (fail-closed ordering)** — `completeClaimedCheckout` now writes the
+   SpiceDB `order#owner` relationship BEFORE the `@Transactional` Postgres commit, so a SpiceDB
+   outage throws before the order is persisted (no orphaned unreachable orders).
+2. **SpiceDB as sole list authority** — removed `WHERE owner_sub = :ownerSub` from
+   `OrderRowRepository.findPage`; `OrderRepository` interface renamed `findPageByOwnerSub` →
+   `findPage`. SpiceDB `filterAllowed` is now the only membership gate; Postgres `owner_sub` is
+   business data only, not authorization.
+3. **Cursor encodes last fetched row** — `listOrders` cursor now always encodes the last fetched
+   row's id (`window.get(window.size()-1)`), not the last SpiceDB-allowed id, so pagination advances
+   correctly past a page of fully-denied rows.
+4. **Cursor non-null when `hasMore`** — cursor emitted whenever `hasMore=true` and `lastFetchedId`
+   is non-null, regardless of how many rows passed SpiceDB, so clients can always advance.
+5. **`OrderListResponse` wire rename** — `List<OrderResponse> orders` → `List<OrderResponse> items`
+   to match the locked AGENTS.md convention (list endpoints return `items` + `nextCursor`).
+6. **N+1 parallelized** — `ResourceAuthorizer` gained a batch `filterAllowed(principal,
+   List<ResourceRef>, permission)` using virtual threads (`Executors.newVirtualThreadPerTaskExecutor`)
+   to issue all N SpiceDB checks concurrently. `listOrders` calls the batch method once.
+7. **`OrderPage.orders` → `.items` in frontend** — `commerce.ts` `OrderPage` type, `fetchOrders`,
+   `isOrderList`, and all callers updated.
+8. **Paginated load-more UX** — `OrderHistoryRoute` rewired to `useSuspenseQuery` (+ loader prefetch)
+   for both orders and catalog; `useState` accumulates extra pages; "Load more orders" button
+   replaces the static "More orders are available." paragraph.
+9. **Catalog prefetched for order routes** — both `/orders` and `/orders/$orderId` loaders now
+   `Promise.all([primary, catalogQueryOptions()])` so `useSuspenseQuery(catalogQueryOptions())`
+   in the component finds a warm cache.
+10. **React key uniqueness** — order line key changed from `key={line.productId}` to
+    `key={\`${order.id}-${line.productId}\`}` / `key={\`${line.productId}-${idx}\`}`.
+11. **ESLint: unused `KEYCLOAK_AUTH_RE` imports** — removed from `auth.spec.ts`,
+    `cart-live.spec.ts`, `catalog-live.spec.ts`, `order-live.spec.ts` (4 files, pre-existing lint
+    errors surfaced by `verify-frontend.sh`).
+
+New tests added (order-service):
+- `list_orders_spicedb_not_sql_is_the_authority_for_list_membership`
+- `list_orders_support_user_sees_order_when_spicedb_grants_cross_user_read`
+- `checkout_spicedb_failure_before_postgres_persist_does_not_commit_order`
+- `list_orders_cursor_encodes_last_fetched_row_not_last_allowed_row`
 
 Cart-line productId + catalog name resolution (end-to-end) — ACCEPTED + PUSHED 2026-06-28 (commit
 9e82829). Codex extended the cart-name follow-up across the boundary: cart-service CartResponse.Item now
@@ -151,8 +165,9 @@ writes succeed only through `catalog:write` plus SpiceDB `store:main#manage`.
 
 ## Exact next action
 
-The merchant catalog UI + catalog-card quick-add + order history slice is ACCEPTED. All PLAN slices are
-done. The next work is a new feature slice on human direction. Candidate slices (within teaching scope):
+Code-review N+1 / security fixes slice is ACCEPTED and pushed. All PLAN slices are done. The next work
+is a new feature slice on human direction. No outstanding correctness or security findings remain from
+the 2026-06-29/30 review pass. Candidate slices (within teaching scope):
 - Merchant dashboard / analytics screen (optional UI extension)
 - Additional security-verification cases if gaps are identified
 - Documentation or hardening improvements
@@ -284,6 +299,36 @@ watched runs:
       verification remains open.)
 
 ## Verifier status
+
+Code-review N+1 / security fixes — ACCEPTED + PUSHED 2026-06-30 (commits 2e7b690 + ESLint fix):
+
+```sh
+# Offline suite — EXIT 0
+JAVA_HOME=$HOME/.sdkman/candidates/java/26.0.1-amzn \
+  DOCKER_HOST=unix://$HOME/.orbstack/run/docker.sock \
+  sh scripts/verify-all.sh
+
+# Live suite — EXIT 0 (all 17 SEC gates green)
+JAVA_HOME=$HOME/.sdkman/candidates/java/26.0.1-amzn \
+  DOCKER_HOST=unix://$HOME/.orbstack/run/docker.sock \
+  PATH="$HOME/.nvm/versions/node/v22.22.3/bin:$PATH" \
+  LIVE_ALL_SKIP_UP=1 sh scripts/verify-live-all.sh
+
+# Frontend suite — EXIT 0
+PATH="$HOME/.nvm/versions/node/v22.22.3/bin:$PATH" \
+  sh scripts/verify-frontend.sh
+```
+
+Results:
+- `verify-all.sh` EXIT 0: architecture gate, commerce-security-common, commerce-web-starter,
+  cart-service, catalog-service, order-service, payment-service — all passed.
+- `verify-live-all.sh` EXIT 0: 17 SEC gates green — cart (11), catalog (1), order/payment (5).
+- `verify-frontend.sh` EXIT 0: ESLint 0 errors, TypeScript clean, Vitest 68/68, bundle within
+  budget, SEC-NO-BROWSER-TOKENS Playwright passed.
+- Environment notes: JDK 26 is at `~/.sdkman/candidates/java/26.0.1-amzn` (the `verify-*`
+  scripts look for `26-amzn` — must set `JAVA_HOME` explicitly); `DOCKER_HOST` must point to
+  the OrbStack socket for Testcontainers (payment-service); pnpm shim activated via
+  `corepack enable pnpm` on node v22.22.3.
 
 listOrders pagination correctness fix — ACCEPTED + COMMITTED 2026-06-30 (commit e4a0537):
 
@@ -1344,3 +1389,28 @@ Append-only, timestamped chronology (newest at the bottom); captures non-commit 
   `SEEDED_MUG_ID`, and `loginAs` from all five live e2e specs into `frontend/tests/e2e/helpers.ts`.
   Full acceptance: `checkout-live.spec.ts` 1/1 passed; `LIVE_ALL_SKIP_UP=1 verify-live-all` EXIT 0,
   all 17 SEC gates green. Stack still up; tear down when done.
+- 2026-06-29/30 — Claude — full `/code-review` pass on `origin/master~8...HEAD`; 10 findings confirmed
+  across 8 finder angles + 10 verifier agents (all CONFIRMED). Fixed all 10 in commit 2e7b690 (16 files,
+  240 ins, 69 del):
+  (1) SpiceDB write reordered before Postgres commit in `completeClaimedCheckout` (fail-closed ordering);
+  (2) `WHERE owner_sub` removed from `OrderRowRepository.findPage` — SpiceDB is now the sole list-authority;
+  (3–4) cursor always encodes last fetched row's id; cursor emitted when `hasMore=true` regardless of
+  SpiceDB denials;
+  (5) `OrderListResponse.orders` → `.items` (wire convention);
+  (6) `ResourceAuthorizer.filterAllowed(List<ResourceRef>)` batch method with virtual threads — `listOrders`
+  calls it once, N SpiceDB checks run concurrently;
+  (7) `OrderPage.orders` → `.items` in frontend `commerce.ts`;
+  (8) `OrderHistoryRoute` rewritten: both queries `useSuspenseQuery`, load-more button with `useState` pages,
+  cursor advances via `queryClient.fetchQuery(ordersQueryOptions(cursor))`;
+  (9) catalog prefetched in both order route loaders so `useSuspenseQuery(catalogQueryOptions())` finds
+  warm cache on first render;
+  (10) order line React keys made unique (`${order.id}-${line.productId}`).
+  4 new unit tests in `OrderApplicationServiceTest`; `OrderListResponse`, `OrderWebErrorHandlingTest`,
+  `OrderIdTsidGenerationTest`, `OrderHistoryRoute.test.tsx` updated throughout.
+  Also fixed 4 pre-existing ESLint errors: unused `KEYCLOAK_AUTH_RE` imports removed from
+  `auth.spec.ts`, `cart-live.spec.ts`, `catalog-live.spec.ts`, `order-live.spec.ts`.
+  Full acceptance: `verify-all.sh` EXIT 0 (offline), `verify-live-all.sh` EXIT 0 (all 17 SEC gates),
+  `verify-frontend.sh` EXIT 0 (68/68 Vitest, bundle, SEC-NO-BROWSER-TOKENS).
+  Environment notes recorded in Verifier status: JAVA_HOME=~/.sdkman/candidates/java/26.0.1-amzn,
+  DOCKER_HOST=unix://$HOME/.orbstack/run/docker.sock, PATH includes ~/.nvm/versions/node/v22.22.3/bin.
+  Stack torn down after acceptance. Pushed to origin/master.

@@ -5,7 +5,7 @@ import {
   type Cookie,
   type Page
 } from "@playwright/test";
-import { APP_ORIGIN, KEYCLOAK_AUTH_RE, loginAs } from "./helpers";
+import { APP_ORIGIN, loginAs } from "./helpers";
 
 type BrowserStorageState = {
   readonly localStorage: Record<string, string>;

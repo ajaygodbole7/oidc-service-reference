@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { APP_ORIGIN, KEYCLOAK_AUTH_RE, TOKEN_MATERIAL_RE, loginAs } from "./helpers";
+import { APP_ORIGIN, TOKEN_MATERIAL_RE, loginAs } from "./helpers";
 
 type JsonResponse = {
   readonly url: string;

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { KEYCLOAK_AUTH_RE, TOKEN_MATERIAL_RE, loginAs } from "./helpers";
+import { TOKEN_MATERIAL_RE, loginAs } from "./helpers";
 
 type FetchResult = { readonly status: number; readonly body: string };
 
