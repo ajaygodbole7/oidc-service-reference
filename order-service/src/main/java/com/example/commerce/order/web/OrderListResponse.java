@@ -5,7 +5,7 @@ import com.example.commerce.web.pagination.Page;
 import java.util.List;
 import org.jspecify.annotations.Nullable;
 
-record OrderListResponse(List<OrderResponse> orders, @Nullable String nextCursor) {
+record OrderListResponse(List<OrderResponse> items, @Nullable String nextCursor) {
 
   static OrderListResponse from(Page<OrderResult> page) {
     return new OrderListResponse(

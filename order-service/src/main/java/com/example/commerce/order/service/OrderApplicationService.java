@@ -18,6 +18,7 @@ import com.example.commerce.web.tsid.TsidGenerator;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.Supplier;
 import org.jspecify.annotations.Nullable;
 
@@ -133,8 +134,11 @@ public final class OrderApplicationService {
         cart.total(),
         authorization.authorizationId(),
         clock.instant());
-    Order saved = checkoutPersistence.persistAndLink(principal.subject(), idempotencyKey, order);
+    // SpiceDB owner relationship is written BEFORE the Postgres commit so a SpiceDB outage
+    // between the two calls cannot leave a charged, committed order permanently orphaned.
+    // A SpiceDB failure here throws and the @Transactional in persistAndLink never commits.
     ensureOrderOwner(principal, orderId, traces);
+    Order saved = checkoutPersistence.persistAndLink(principal.subject(), idempotencyKey, order);
     return new OrderResult(saved, List.copyOf(traces));
   }
 
@@ -151,19 +155,25 @@ public final class OrderApplicationService {
     DecisionTrace scopeTrace = scopeAuthorizer.requireScope(principal, ORDERS_READ);
     int pageSize = paginator.resolveLimit(limit);
     String afterId = CursorPaginator.decodeCursor(cursor);
-    List<Order> rawRows = orderRepository.findPageByOwnerSub(principal.subject(), afterId, pageSize + 1);
+    // No SQL ownership filter — SpiceDB is the sole list-membership authority (AGENTS.md invariant).
+    List<Order> rawRows = orderRepository.findPage(afterId, pageSize + 1);
     boolean hasMore = rawRows.size() > pageSize;
-    List<OrderResult> items = (hasMore ? rawRows.subList(0, pageSize) : rawRows)
-        .stream()
-        .flatMap(order -> resourceAuthorizer
-            .filterAllowed(principal, orderResource(order.id()), ORDER_READ)
-            .map(resourceTrace -> new OrderResult(order, List.of(scopeTrace, resourceTrace)))
-            .stream())
-        .toList();
-    String nextCursor = hasMore && !items.isEmpty()
-        ? CursorPaginator.encodeCursor(items.get(items.size() - 1).order().id().value())
+    List<Order> window = hasMore ? rawRows.subList(0, pageSize) : rawRows;
+    // Cursor encodes the last *fetched* row, not the last SpiceDB-allowed item, so denied rows
+    // between the cursor boundary and the page boundary are not re-fetched on subsequent pages.
+    String lastFetchedId = window.isEmpty() ? null : window.get(window.size() - 1).id().value();
+    List<ResourceRef> orderResources = window.stream().map(o -> orderResource(o.id())).toList();
+    List<Optional<DecisionTrace>> decisions =
+        resourceAuthorizer.filterAllowed(principal, orderResources, ORDER_READ);
+    List<OrderResult> items = new ArrayList<>();
+    for (int i = 0; i < window.size(); i++) {
+      Order order = window.get(i);
+      decisions.get(i).ifPresent(trace -> items.add(new OrderResult(order, List.of(scopeTrace, trace))));
+    }
+    String nextCursor = hasMore && lastFetchedId != null
+        ? CursorPaginator.encodeCursor(lastFetchedId)
         : null;
-    return new Page<>(items, nextCursor);
+    return new Page<>(List.copyOf(items), nextCursor);
   }
 
   public OrderResult cancelOrder(CommercePrincipal principal, OrderId orderId) {

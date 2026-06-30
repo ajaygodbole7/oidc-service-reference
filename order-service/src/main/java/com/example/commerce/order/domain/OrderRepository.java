@@ -8,7 +8,9 @@ public interface OrderRepository {
 
   Optional<Order> findById(OrderId orderId);
 
-  List<Order> findPageByOwnerSub(String ownerSub, @Nullable String afterId, int limit);
+  /** Returns all orders in descending id order, without an ownership filter.
+   *  SpiceDB is the authority for who may see each order — do not filter by owner in SQL. */
+  List<Order> findPage(@Nullable String afterId, int limit);
 
   Order save(Order order);
 }

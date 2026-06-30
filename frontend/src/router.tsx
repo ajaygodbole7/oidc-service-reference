@@ -58,14 +58,21 @@ const merchantCatalogRoute = createRoute({
 const ordersRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/orders",
-  loader: ({ context }) => context.queryClient.ensureQueryData(ordersQueryOptions())
+  loader: ({ context }) =>
+    Promise.all([
+      context.queryClient.ensureQueryData(ordersQueryOptions()),
+      context.queryClient.ensureQueryData(catalogQueryOptions())
+    ])
 }).lazy(() => import("@/routes/OrderHistoryRoute").then((d) => d.Route));
 
 const orderRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/orders/$orderId",
   loader: ({ context, params }) =>
-    context.queryClient.ensureQueryData(orderQueryOptions(params.orderId))
+    Promise.all([
+      context.queryClient.ensureQueryData(orderQueryOptions(params.orderId)),
+      context.queryClient.ensureQueryData(catalogQueryOptions())
+    ])
 }).lazy(() => import("@/routes/OrderRoute").then((d) => d.Route));
 
 const routeTree = rootRoute.addChildren([

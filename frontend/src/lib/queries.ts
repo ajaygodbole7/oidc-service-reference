@@ -27,6 +27,8 @@ export const queryKeys = {
   product: (productId: string) => ["catalog", "product", productId] as const,
   cart: ["cart"] as const,
   orders: ["orders"] as const,
+  ordersPage: (cursor?: string) =>
+    cursor ? (["orders", "page", cursor] as const) : (["orders", "page"] as const),
   order: (orderId: string) => ["orders", orderId] as const
 };
 
@@ -73,10 +75,10 @@ export function orderQueryOptions(orderId: string) {
   });
 }
 
-export function ordersQueryOptions() {
+export function ordersQueryOptions(cursor?: string) {
   return queryOptions({
-    queryKey: queryKeys.orders,
-    queryFn: ({ signal }) => fetchOrders(signal)
+    queryKey: queryKeys.ordersPage(cursor),
+    queryFn: ({ signal }) => fetchOrders(signal, cursor)
   });
 }
 

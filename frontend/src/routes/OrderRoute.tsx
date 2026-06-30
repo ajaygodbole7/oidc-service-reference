@@ -1,4 +1,4 @@
-import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
+import { useSuspenseQuery } from "@tanstack/react-query";
 import { createLazyRoute, Link, useParams } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,10 +28,8 @@ function ContinueShopping() {
 }
 
 function OrderConfirmation({ order }: { readonly order: Order }) {
-  const { data: catalogProducts } = useQuery(catalogQueryOptions());
-  const nameByProductId = new Map(
-    (catalogProducts ?? []).map((product) => [product.id, product.name])
-  );
+  const { data: catalogProducts } = useSuspenseQuery(catalogQueryOptions());
+  const nameByProductId = new Map(catalogProducts.map((product) => [product.id, product.name]));
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <ContinueShopping />
@@ -58,9 +56,9 @@ function OrderConfirmation({ order }: { readonly order: Order }) {
           </dl>
 
           <ul aria-label="Order items" className="divide-y">
-            {order.lines.map((line) => (
+            {order.lines.map((line, idx) => (
               <li
-                key={line.productId}
+                key={`${line.productId}-${idx}`}
                 className="flex items-baseline justify-between gap-4 py-3"
               >
                 <div className="min-w-0">

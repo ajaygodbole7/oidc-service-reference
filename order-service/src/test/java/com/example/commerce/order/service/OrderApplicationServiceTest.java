@@ -15,6 +15,7 @@ import com.example.commerce.order.domain.ProductId;
 import com.example.commerce.security.AuthorizationClient;
 import com.example.commerce.security.AuthorizationDecision;
 import com.example.commerce.security.AuthorizationDeniedException;
+import com.example.commerce.security.AuthorizationUnavailableException;
 import com.example.commerce.security.CommercePrincipal;
 import com.example.commerce.security.DecisionTrace;
 import com.example.commerce.security.InMemoryAuthorizationClient;
@@ -244,7 +245,10 @@ class OrderApplicationServiceTest {
   }
 
   @Test
-  void list_orders_discovers_current_users_orders_then_checks_each_order_resource() {
+  void list_orders_spicedb_not_sql_is_the_authority_for_list_membership() {
+    // Both alice's and bob's orders are fetched from DB (no SQL ownership filter).
+    // SpiceDB grants alice read on her own order only — bob's order is filtered out by SpiceDB,
+    // not by a WHERE owner_sub clause. This proves the AGENTS.md invariant holds.
     RecordingAuthorizationClient authorizationClient = authorizationClientWithAliceOrderRead();
     RecordingOrderRepository orderRepository = new RecordingOrderRepository(List.of(
         aliceOrder(),
@@ -262,14 +266,95 @@ class OrderApplicationServiceTest {
         authorizationClient,
         new RecordingPaymentClient());
 
-    Page<OrderResult> page = service.listOrders(principal("alice", "orders:read"), 1, null);
+    Page<OrderResult> page = service.listOrders(principal("alice", "orders:read"), 10, null);
 
     assertThat(page.items())
         .extracting(result -> result.order().id())
         .containsExactly(new OrderId("alice-order"));
     assertThat(page.nextCursor()).isNull();
+    // Both orders are presented to SpiceDB — the SQL layer does not pre-filter by owner.
     assertThat(authorizationClient.requests())
-        .containsExactly(new CheckRequest("user:alice", "order:alice-order", "read"));
+        .containsExactlyInAnyOrder(
+            new CheckRequest("user:alice", "order:alice-order", "read"),
+            new CheckRequest("user:alice", "order:bob-order", "read"));
+  }
+
+  @Test
+  void list_orders_support_user_sees_order_when_spicedb_grants_cross_user_read() {
+    RecordingAuthorizationClient authorizationClient = recordingClient(
+        new InMemoryAuthorizationClient()
+            .grant(SubjectRef.user("support"), ALICE_ORDER, READ));
+    RecordingOrderRepository orderRepository = new RecordingOrderRepository(List.of(aliceOrder()));
+    OrderApplicationService service = service(
+        orderRepository, cartLookup(), authorizationClient, new RecordingPaymentClient());
+
+    Page<OrderResult> page = service.listOrders(principal("support", "orders:read"), 10, null);
+
+    assertThat(page.items())
+        .extracting(result -> result.order().id())
+        .containsExactly(new OrderId("alice-order"));
+    assertThat(authorizationClient.requests())
+        .containsExactly(new CheckRequest("user:support", "order:alice-order", "read"));
+  }
+
+  @Test
+  void checkout_spicedb_failure_before_postgres_persist_does_not_commit_order() {
+    // Proves fix for the orphaned-order bug: ensureOrderOwner (SpiceDB) now runs BEFORE
+    // persistAndLink (Postgres). A SpiceDB outage after payment must not leave a committed,
+    // unreachable order row.
+    RecordingAuthorizationClient failingSpiceDb = new RecordingAuthorizationClient(
+        new AuthorizationClient() {
+          private final InMemoryAuthorizationClient delegate =
+              new InMemoryAuthorizationClient().grant(SubjectRef.user("alice"), ALICE_CART, READ);
+
+          @Override
+          public AuthorizationDecision check(SubjectRef s, ResourceRef r, Permission p) {
+            return delegate.check(s, r, p);
+          }
+
+          @Override
+          public void writeRelationship(Relationship r) {
+            throw new AuthorizationUnavailableException("SpiceDB down");
+          }
+        });
+    RecordingOrderRepository orderRepository = new RecordingOrderRepository(List.of());
+    OrderApplicationService service = service(
+        orderRepository, cartLookup(), failingSpiceDb, new RecordingPaymentClient());
+
+    assertThatThrownBy(() -> service.checkout(
+            principal("alice", "orders:write"),
+            checkoutCommand(),
+            new IdempotencyKey("key-1")))
+        .isInstanceOf(AuthorizationDeniedException.class)
+        .hasMessageContaining("unavailable");
+
+    assertThat(orderRepository.saveCount()).isZero();
+  }
+
+  @Test
+  void list_orders_cursor_encodes_last_fetched_row_not_last_allowed_row() {
+    // "zzz-alice-order" sorts first in descending order but has no SpiceDB grant.
+    // The cursor must encode "zzz-alice-order" (last fetched), not "alice-order" (last allowed),
+    // so the next page does not re-fetch the already-processed denied row.
+    RecordingAuthorizationClient authorizationClient = authorizationClientWithAliceOrderRead();
+    RecordingOrderRepository orderRepository = new RecordingOrderRepository(List.of(
+        aliceOrder(),
+        Order.confirmed(
+            new OrderId("zzz-alice-order"),
+            "alice",
+            new CartId("alice-cart"),
+            List.of(new OrderLine(new ProductId("starter-mug"), 1, Money.usd("12.50"))),
+            Money.usd("12.50"),
+            "auth-zzz",
+            NOW)));
+    OrderApplicationService service = service(
+        orderRepository, cartLookup(), authorizationClient, new RecordingPaymentClient());
+
+    Page<OrderResult> page = service.listOrders(principal("alice", "orders:read"), 1, null);
+
+    assertThat(page.items()).isEmpty();
+    assertThat(page.nextCursor()).isNotNull();
+    assertThat(CursorPaginator.decodeCursor(page.nextCursor())).isEqualTo("zzz-alice-order");
   }
 
   @Test
@@ -586,9 +671,8 @@ class OrderApplicationServiceTest {
     }
 
     @Override
-    public List<Order> findPageByOwnerSub(String ownerSub, @Nullable String afterId, int limit) {
+    public List<Order> findPage(@Nullable String afterId, int limit) {
       return orders.values().stream()
-          .filter(order -> order.ownerSub().equals(ownerSub))
           .filter(order -> afterId == null || order.id().value().compareTo(afterId) < 0)
           .sorted((left, right) -> right.id().value().compareTo(left.id().value()))
           .limit(limit)

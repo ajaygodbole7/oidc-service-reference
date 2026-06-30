@@ -1,20 +1,37 @@
-import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useSuspenseQuery, useQueryClient } from "@tanstack/react-query";
 import { createLazyRoute, Link, type ErrorComponentProps } from "@tanstack/react-router";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatMoney, type Order } from "@/lib/commerce";
+import { formatMoney, type Order, type OrderPage } from "@/lib/commerce";
 import { catalogQueryOptions, ordersQueryOptions } from "@/lib/queries";
 
 function OrderHistoryScreen() {
-  const { data: orderPage } = useSuspenseQuery(ordersQueryOptions());
-  const orders = orderPage.orders;
-  const { data: catalogProducts } = useQuery(catalogQueryOptions());
-  const nameByProductId = new Map(
-    (catalogProducts ?? []).map((product) => [product.id, product.name])
-  );
+  const { data: firstPage } = useSuspenseQuery(ordersQueryOptions());
+  const { data: catalogProducts } = useSuspenseQuery(catalogQueryOptions());
+  const queryClient = useQueryClient();
+
+  const [extraPages, setExtraPages] = useState<readonly OrderPage[]>([]);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+
+  const allPages = [firstPage, ...extraPages];
+  const orders = allPages.flatMap((p) => p.items);
+  const nextCursor = allPages.at(-1)?.nextCursor;
+  const nameByProductId = new Map(catalogProducts.map((p) => [p.id, p.name]));
+
+  async function handleLoadMore() {
+    if (!nextCursor || isLoadingMore) return;
+    setIsLoadingMore(true);
+    try {
+      const page = await queryClient.fetchQuery(ordersQueryOptions(nextCursor));
+      setExtraPages((prev) => [...prev, page]);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }
 
   return (
     <section aria-labelledby="orders-heading" className="flex flex-col gap-4">
@@ -27,9 +44,21 @@ function OrderHistoryScreen() {
         </p>
       </header>
       <Separator />
-      {orders.length === 0 ? <EmptyOrders /> : <OrderList orders={orders} nameByProductId={nameByProductId} />}
-      {orderPage.nextCursor !== undefined ? (
-        <p className="text-sm text-muted-foreground">More orders are available.</p>
+      {orders.length === 0 ? (
+        <EmptyOrders />
+      ) : (
+        <OrderList orders={orders} nameByProductId={nameByProductId} />
+      )}
+      {nextCursor !== undefined ? (
+        <Button
+          variant="outline"
+          size="sm"
+          className="self-start"
+          onClick={handleLoadMore}
+          disabled={isLoadingMore}
+        >
+          {isLoadingMore ? "Loading…" : "Load more orders"}
+        </Button>
       ) : null}
     </section>
   );

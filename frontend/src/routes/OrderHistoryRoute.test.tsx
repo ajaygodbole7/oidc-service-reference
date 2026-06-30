@@ -16,7 +16,7 @@ vi.mock("@/lib/commerce", async (importOriginal) => {
 });
 
 import { fetchCatalogProducts, fetchOrders } from "@/lib/commerce";
-import { ordersQueryOptions } from "@/lib/queries";
+import { catalogQueryOptions, ordersQueryOptions } from "@/lib/queries";
 import { Route as OrderHistoryRoute } from "@/routes/OrderHistoryRoute";
 
 const orders: Order[] = [
@@ -51,7 +51,11 @@ function renderOrderHistoryRoute() {
   const route = createRoute({
     getParentRoute: () => rootRoute,
     path: "/orders",
-    loader: ({ context }) => context.queryClient.ensureQueryData(ordersQueryOptions()),
+    loader: ({ context }) =>
+      Promise.all([
+        context.queryClient.ensureQueryData(ordersQueryOptions()),
+        context.queryClient.ensureQueryData(catalogQueryOptions())
+      ]),
     component: OrderHistoryRoute.options.component!,
     pendingComponent: OrderHistoryRoute.options.pendingComponent!,
     errorComponent: OrderHistoryRoute.options.errorComponent!
@@ -77,7 +81,7 @@ describe("OrderHistoryRoute", () => {
   });
 
   it("renders current user's orders with catalog-resolved line names", async () => {
-    vi.mocked(fetchOrders).mockResolvedValue({ orders, nextCursor: "next-page" });
+    vi.mocked(fetchOrders).mockResolvedValue({ items: orders, nextCursor: "next-page" });
 
     renderOrderHistoryRoute();
 
@@ -86,7 +90,7 @@ describe("OrderHistoryRoute", () => {
     expect(screen.getByText("CONFIRMED")).toBeInTheDocument();
     expect(screen.getAllByText("$42.99")).not.toHaveLength(0);
     expect(await screen.findByText("Camp Pantry Pack")).toBeInTheDocument();
-    expect(screen.getByText("More orders are available.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /load more orders/i })).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.queryByText("prod-pack")).not.toBeInTheDocument();
     });
@@ -94,7 +98,7 @@ describe("OrderHistoryRoute", () => {
   });
 
   it("renders an empty order state", async () => {
-    vi.mocked(fetchOrders).mockResolvedValue({ orders: [] });
+    vi.mocked(fetchOrders).mockResolvedValue({ items: [] });
 
     renderOrderHistoryRoute();
 

@@ -57,7 +57,7 @@ export type Order = {
 };
 
 export type OrderPage = {
-  readonly orders: readonly Order[];
+  readonly items: readonly Order[];
   readonly nextCursor?: string;
 };
 
@@ -200,8 +200,9 @@ export async function fetchOrder(orderId: string, signal: AbortSignal): Promise<
   return body;
 }
 
-export async function fetchOrders(signal: AbortSignal): Promise<OrderPage> {
-  const response = await callApi("/api/orders", {
+export async function fetchOrders(signal: AbortSignal, cursor?: string): Promise<OrderPage> {
+  const url = cursor ? `/api/orders?cursor=${encodeURIComponent(cursor)}` : "/api/orders";
+  const response = await callApi(url, {
     headers: { Accept: "application/json" },
     signal
   });
@@ -211,8 +212,8 @@ export async function fetchOrders(signal: AbortSignal): Promise<OrderPage> {
   const body = (await response.json()) as unknown;
   if (!isOrderList(body)) throw new Error("Orders response had an unexpected shape");
   return {
-    orders: body.orders,
-    ...(body.nextCursor !== undefined && body.nextCursor !== null ? { nextCursor: body.nextCursor } : {})
+    items: body.items,
+    ...(typeof body.nextCursor === "string" ? { nextCursor: body.nextCursor } : {})
   };
 }
 
@@ -300,9 +301,9 @@ function isOrderList(value: unknown): value is OrderPage {
   if (value === null || typeof value !== "object") return false;
   const list = value as Record<string, unknown>;
   return (
-    Array.isArray(list.orders) &&
-    list.orders.every(isOrder) &&
-    (list.nextCursor === undefined || list.nextCursor === null || typeof list.nextCursor === "string")
+    Array.isArray(list.items) &&
+    list.items.every(isOrder) &&
+    (list.nextCursor === undefined || typeof list.nextCursor === "string")
   );
 }
 
