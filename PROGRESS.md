@@ -22,9 +22,8 @@ Every session must leave these sections populated:
 
 ## Current slice
 
-Merchant catalog UI + catalog-card quick-add + order history — IMPLEMENTED + COMMITTED/PUSHED
-2026-06-28 (commits 51d39e3 + ce4e890); offline + live-regression ACCEPTED, the order-history BROWSER
-e2e is ENVIRONMENT-BLOCKED on this host (see the closing paragraph). This pass completed the remaining
+Merchant catalog UI + catalog-card quick-add + order history — ACCEPTED + COMMITTED/PUSHED
+2026-06-28/29 (commits 51d39e3 + ce4e890 + fix applied 2026-06-29). This pass completed the remaining
 business-app code gaps in sequence:
 - merchant catalog management UI at `/merchant/catalog`, using the existing catalog POST/PUT APIs
   through React 19 Actions and TanStack Query invalidation;
@@ -40,26 +39,15 @@ business-app code gaps in sequence:
 The order-history backend keeps the four-gate rule visible: `OrderApplicationService.listOrders` checks
 `orders:read`, discovers current-subject candidate orders from Postgres, then runs
 `ResourceAuthorizer` `order:{id}#read@user:{sub}` for each order before returning it. Postgres
-`owner_sub` is discovery/business data, not the fine authorization decision. Verification (Claude,
-independent of Codex's claims): offline re-confirmed — pnpm verify 68/68 and full reactor
-`mvnw clean test` BUILD SUCCESS incl. OrderApplicationServiceTest (listOrders), OrderWebErrorHandlingTest,
-and PostgresOrderRepositoryTest (findByOwnerSub against real Postgres — the derived query the static
-review could not check); plus a live REGRESSION pass — verify-live-all 17/17 SEC, proving the new
-GET /api/orders route + order-repo change did NOT break the four-gate ladder. Security-reviewed: order-list
-authz is scoped to principal.subject() with all four gates intact (no IDOR); FE token boundary held (all
-mutations via callApi); conventions clean; backend<->FE shapes match. The one piece NOT achieved is the
-new GET /api/orders BROWSER e2e (extended checkout-live: login -> checkout -> /orders lists the order
-through the gates; the spec is committed at frontend/tests/e2e/checkout-live.spec.ts step 5b, hardened to
-an SPA nav-click). It is ENVIRONMENT-BLOCKED, not a code defect: this host is chronically ~99% full and a
-cold full-stack live run (5 service images + 10-container stack + 17 SEC + Playwright) exhausts the disk
-every time. Three watched attempts 2026-06-28 all disk-failed — a stage-2 hard brick from a 5.8 GiB start,
-a daemon-down (non-disk), and a third from a HEALTHY 7.9 GiB start that still drained to ~1.5 GiB with only
-1/17 SEC done (stopped before a hard brick). Max free on this Mac is ~8 GiB only with Docker fully empty,
-which a cold run consumes. So the order-history endpoint stands proven at the INTEGRATION + LIVE-REGRESSION
-level (its authz, the real-Postgres keyset query, and gateway routing are all verified; the 17-SEC battery
-exercises the full browser->gateway path for cart/catalog/order-payment). The committed checkout-live order
-assertion will pass on a host with ~10+ GiB headroom or in CI. To unblock locally: free several GB of host
-data, or run the e2e elsewhere.
+`owner_sub` is discovery/business data, not the fine authorization decision. Full acceptance proven
+2026-06-29 on this host after migrating from Docker Desktop to OrbStack (132 GiB free): the
+`checkout-live.spec.ts` step 5b (login → checkout → click Orders link → `/orders` shows the new order)
+passed in 9.9 s and `LIVE_ALL_SKIP_UP=1 verify-live-all` exited 0 with all 17 SEC gates green.
+Root cause of the earlier 401 on `GET /api/orders`: `CommercePrincipalFilter.shouldNotFilter` used
+`path.startsWith("/api/orders/")` (trailing slash), so the list endpoint `/api/orders` (no slash) bypassed
+the filter; bff-session injected the bearer but `@RequestAttribute("commercePrincipal")` was null, and
+`GlobalExceptionHandler.handleServletRequestBindingException` mapped that to 401. Fixed by changing the
+guard to `!(path.equals("/api/orders") || path.startsWith("/api/orders/"))`.
 
 Cart-line productId + catalog name resolution (end-to-end) — ACCEPTED + PUSHED 2026-06-28 (commit
 9e82829). Codex extended the cart-name follow-up across the boundary: cart-service CartResponse.Item now
@@ -163,12 +151,13 @@ writes succeed only through `catalog:write` plus SpiceDB `store:main#manage`.
 
 ## Exact next action
 
-Run the live/local integration acceptance for the new UI/API slice when disk is safe:
-1. Free/trim disk first; the host had about 9 GiB free during implementation.
-2. Bring the stack up once and verify the new APISIX `GET /api/orders` route plus existing catalog write
-   routes.
-3. Add or run a live browser path for merchant create/update, catalog-card quick-add, and `/orders`.
-4. Only then mark this slice accepted and commit the code + this progress update.
+The merchant catalog UI + catalog-card quick-add + order history slice is ACCEPTED. All PLAN slices are
+done. The next work is a new feature slice on human direction. Candidate slices (within teaching scope):
+- Merchant dashboard / analytics screen (optional UI extension)
+- Additional security-verification cases if gaps are identified
+- Documentation or hardening improvements
+
+No action required before the next human-directed slice begins.
 
 Architecture gates are now in place: `scripts/verify-architecture.sh` (wired into
 `verify-all.sh`) enforces the layering invariants by source-import inspection — domain purity,
@@ -295,6 +284,26 @@ watched runs:
       verification remains open.)
 
 ## Verifier status
+
+Merchant catalog UI + order history ACCEPTED 2026-06-29 (OrbStack host, 132 GiB free):
+
+```sh
+# fix: order-service CommercePrincipalFilter.shouldNotFilter trailing-slash bug
+docker compose build order-service
+docker compose up -d order-service
+# checkout-live step 5b (login -> checkout -> Orders link -> /orders shows order)
+PATH="$HOME/.nvm/versions/node/v22.22.3/bin:$PATH" \
+  E2E_FULL_STACK=1 corepack pnpm exec playwright test tests/e2e/checkout-live.spec.ts
+# full live battery (stack already up, SKIP_UP=1)
+JAVA_HOME=$HOME/.sdkman/candidates/java/26.0.1-amzn \
+  DOCKER_HOST=unix://$HOME/.orbstack/run/docker.sock \
+  TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=$HOME/.orbstack/run/docker.sock \
+  PATH="$HOME/.nvm/versions/node/v22.22.3/bin:$PATH" \
+  LIVE_ALL_SKIP_UP=1 sh scripts/verify-live-all.sh
+```
+
+Results: `checkout-live` 1/1 passed (9.9 s). `verify-live-all` EXIT 0 — all 17 SEC gates green
+(cart 11, SEC-CATALOG-ANONYMOUS-READ-ONLY, order/payment 5). Slice ACCEPTED.
 
 Merchant catalog UI + catalog-card quick-add + order history local verification, 2026-06-28:
 
@@ -764,19 +773,14 @@ verification.
 
 ## Session handoff
 
-All PLAN slices are accepted; platform verification + documentation are complete; the boot4-inspired
-hardening + RFC 9457 unification (40f2170, 60ce1e5) and all four staff-review findings (6b9905d) are
-closed; and on 2026-06-22 a human-directed frontend-modernization slice shipped (TanStack Router+Query,
-shadcn/Radix, React Compiler + R19 Actions, OIDC practice docs, e2e rewrite — d9fe023) along with the
-two regressions the live battery caught (SecretSentinel test-fixture 6e31f0e, FE catalog model 1e66e7a)
-and two backend follow-ups (catalog 409 + harness cleanup 858f932). All pushed; full live battery green
-(verify-live-all EXIT 0, 17 SEC-*); stack torn down. There is NO queued slice — the reference is
-feature-complete and FE-modernized with zero outstanding findings. The next loop is a new feature on
-human direction; the grounded candidates are in Exact next action (checkout/cart-mutation Actions;
-order-history / merchant catalog-management screens). Keep the four gates visible in code and traces;
-Postgres owner columns and TSID ids are not authorization. Always free + TRIM host disk before a full
-live run (see Blockers — it bricked once this session). ArchUnit/NullAway/PIT were considered and
-declined as reference-overkill.
+All PLAN slices are accepted and fully live-verified. The merchant catalog UI + catalog-card quick-add +
+order history slice is now ACCEPTED on this host (OrbStack runtime, 132 GiB free) with `checkout-live`
+step 5b green and all 17 SEC gates green (verify-live-all EXIT 0, 2026-06-29). No outstanding slices or
+findings. The reference is feature-complete. The next loop is a new feature on human direction; grounded
+candidates are in Exact next action. Keep the four gates visible in code and traces; Postgres owner
+columns are not authorization. The Docker runtime on this host is now OrbStack
+(`~/.orbstack/run/docker.sock`); set DOCKER_HOST + TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE accordingly for
+Testcontainers runs.
 
 ## Session log
 
@@ -1276,3 +1280,11 @@ Append-only, timestamped chronology (newest at the bottom); captures non-commit 
   permission classifier (out-of-project destructive delete); the sanctioned restart+prune path was used
   instead. Finished by pruning Docker to 0B and shutting down Docker Desktop (daemon DOWN, disk 6.3 GiB).
   No code changed this pass — docs only.
+- 2026-06-29 — Claude — migrated runtime from Docker Desktop to OrbStack (DOCKER_HOST adjusted; 132 GiB
+  free); diagnosed and fixed the order-history 401 bug; ran the full browser acceptance and live battery.
+  Bug: `CommercePrincipalFilter.shouldNotFilter` in order-service used `path.startsWith("/api/orders/")`
+  (trailing slash), so `GET /api/orders` (no slash) bypassed the filter, left no `commercePrincipal`
+  attribute, and `GlobalExceptionHandler` mapped the resulting `ServletRequestBindingException` to 401.
+  Fix: guard changed to `!(path.equals("/api/orders") || path.startsWith("/api/orders/"))`.
+  `checkout-live.spec.ts` 1/1 passed (step 5b: login → checkout → Orders link → `/orders` shows order);
+  `LIVE_ALL_SKIP_UP=1 verify-live-all` EXIT 0, all 17 SEC gates green. Slice ACCEPTED and committed.
