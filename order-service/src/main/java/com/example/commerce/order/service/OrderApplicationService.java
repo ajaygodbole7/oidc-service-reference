@@ -191,15 +191,22 @@ public final class OrderApplicationService {
         exhausted = candidates.size() <= pageSize;
       }
     }
-    // Cursor encodes the last SpiceDB-allowed item's id so no denied resource id is embedded in
-    // cursors returned to the client. The scan crosses denied same-owner rows without exposing
-    // their ids or truncating older allowed orders. Cursor is only emitted when a confirmed
-    // (pageSize+1)th allowed item was observed — stronger than DB hasMore, which would include
-    // denied rows.
-    String lastAllowedId = items.isEmpty() ? null : items.get(items.size() - 1).order().id().value();
-    String nextCursor = hasMoreAllowed && lastAllowedId != null
-        ? CursorPaginator.encodeCursor(lastAllowedId)
-        : null;
+    // nextCursor is null ONLY at true exhaustion. Three exit cases:
+    //  - hasMoreAllowed: a confirmed (pageSize+1)th allowed item exists → resume after the last
+    //    returned item's id (no denied id is ever encoded).
+    //  - cap hit (!exhausted): the scan stopped with same-owner rows still unscanned → resume from
+    //    the last SCANNED row so allowed orders beyond a denied block larger than the scan window
+    //    stay reachable across requests. scanAfterId is the owner's own row (the query is
+    //    owner_sub-narrowed), so the cursor never encodes another subject's id.
+    //  - exhausted: genuinely no more rows for this owner → null.
+    String nextCursor;
+    if (hasMoreAllowed) {
+      nextCursor = CursorPaginator.encodeCursor(items.get(items.size() - 1).order().id().value());
+    } else if (!exhausted) {
+      nextCursor = CursorPaginator.encodeCursor(scanAfterId);
+    } else {
+      nextCursor = null;
+    }
     return new Page<>(List.copyOf(items), nextCursor);
   }
 

@@ -480,10 +480,53 @@ class OrderApplicationServiceTest {
 
     Page<OrderResult> page = service.listOrders(principal("alice", "orders:read"), 1, null);
 
+    // The cap bounds a single request to exactly 10 batches × 2 candidates = 20 SpiceDB checks,
+    // never the full 22 rows — the unbounded-scan DoS vector is closed.
+    assertThat(authorizationClient.requests()).hasSize(20);
     assertThat(page.items()).isEmpty();
-    assertThat(page.nextCursor()).isNull();
-    // Cap is 10 batches × 2 candidates = 20 checks — must not reach 22
-    assertThat(authorizationClient.requests()).hasSizeLessThanOrEqualTo(20);
+    // A resume cursor IS emitted (not null): the cap fired mid-scan with rows still unscanned, so
+    // the client can page past this denied block instead of losing allowed orders beyond it.
+    // nextCursor is null ONLY at true exhaustion (see the exhausted-and-denied test below).
+    assertThat(page.nextCursor()).isNotNull();
+  }
+
+  @Test
+  void list_orders_resume_cursor_reaches_allowed_order_beyond_a_denied_block() {
+    // Regression guard for the scan-cap truncation bug: when the cap fired mid-scan the method used
+    // to return nextCursor=null, hiding allowed orders sitting beyond a denied block larger than the
+    // scan window. Layout (DESC by id): 1 allowed (99), 20 denied (98..79), 1 older allowed (78).
+    // With pageSize=1 and MAX_SCAN_BATCHES=10 a single call scans 20 rows, so the oldest allowed
+    // order (78) is only reachable via the resume cursor on a second call.
+    List<Order> rows = new ArrayList<>();
+    for (int n = 99; n >= 78; n--) {
+      String id = String.format("alice-order-%02d", n);
+      rows.add(Order.confirmed(
+          new OrderId(id), "alice", new CartId("alice-cart"),
+          List.of(new OrderLine(new ProductId("starter-mug"), 1, Money.usd("1.00"))),
+          Money.usd("1.00"), "auth-" + n, NOW));
+    }
+    RecordingAuthorizationClient authorizationClient = recordingClient(
+        new InMemoryAuthorizationClient()
+            .grant(SubjectRef.user("alice"), new ResourceRef("order", "alice-order-99"), READ)
+            .grant(SubjectRef.user("alice"), new ResourceRef("order", "alice-order-78"), READ));
+    RecordingOrderRepository orderRepository = new RecordingOrderRepository(rows);
+    OrderApplicationService service = service(
+        orderRepository, cartLookup(), authorizationClient, new RecordingPaymentClient());
+
+    Page<OrderResult> first = service.listOrders(principal("alice", "orders:read"), 1, null);
+    assertThat(first.items())
+        .extracting(result -> result.order().id())
+        .containsExactly(new OrderId("alice-order-99"));
+    // Cap fired before the oldest allowed order was reached — a resume cursor keeps it reachable.
+    assertThat(first.nextCursor()).isNotNull();
+
+    Page<OrderResult> second =
+        service.listOrders(principal("alice", "orders:read"), 1, first.nextCursor());
+    assertThat(second.items())
+        .extracting(result -> result.order().id())
+        .containsExactly(new OrderId("alice-order-78"));
+    // True exhaustion after the oldest allowed order → null cursor.
+    assertThat(second.nextCursor()).isNull();
   }
 
   @Test
