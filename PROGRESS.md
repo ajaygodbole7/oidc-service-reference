@@ -22,6 +22,44 @@ Every session must leave these sections populated:
 
 ## Current slice
 
+Code-review fixes (Vercel React pass + pagination-scan hardening) — ACCEPTED + COMMITTED + PUSHED
+2026-07-01. Two review passes on top of the second-pass work below:
+
+**A. Vercel React best-practices pass** (commit `cdc33fd`). Ran `/code-review` against the
+`react-best-practices` skill (vercel-labs/agent-skills). 24 raw candidates → 7 fixed after verify
+(waterfall/Suspense candidates REFUTED because both `/orders` and `/orders/$orderId` loaders already
+`Promise.all` order+catalog; `useTransition`-for-load-more REFUTED because `queryClient.fetchQuery`
+is imperative, outside React's scheduler; `@/auth` bundle-bloat REFUTED by tree-shaking):
+1. `OrderHistoryRoute` — `isLoadingMoreRef` guards `handleLoadMore` against a double-click race
+   (synchronous ref read/write is not subject to React batching, so the stale-closure guard bypass
+   is closed).
+2. `CartView` — `nameByProductId` Map wrapped in `useMemo([catalogProducts])`.
+3. `AppShell` — `itemCount` reduce wrapped in `useMemo([cart.data])` (also drops the `?? []`
+   per-render allocation on background refetches).
+4. `MerchantCatalogRoute` — two sequential `invalidateQueries` awaits replaced with `Promise.all`.
+5. `commerce.ts` — `CURRENCY_CODE_RE` hoisted to module scope (rule 7.10).
+6. `QuickAddToCart` — `.some()` + `.map()` double-scan replaced with `findIndex` + single `.map()`.
+   (Frontend 72/72 green.)
+
+**B. Pagination scan-cap DoS + resume-cursor** (commits `8a3ac5f`, `a38ac57`). Reviewing Codex's
+`c7d5b73` (scan-past-denied loop) surfaced an unbounded-scan vector: a bulk SpiceDB revocation
+(all rows denied) turned one `GET /api/orders` into O(N/pageSize) DB queries. Fixed in two steps:
+1. `8a3ac5f` — cap the scan at `MAX_SCAN_BATCHES=10` (for-loop bound). At the cap the service
+   returns what it collected. Added `list_orders_scan_cap_limits_db_queries_when_many_rows_are_denied`.
+2. `a38ac57` — a `/code-review` of `8a3ac5f` caught that the cap made `nextCursor=null` on a
+   cap-hit, indistinguishable from true exhaustion, so a user's own allowed orders beyond a denied
+   block larger than the scan window became **unreachable**. Fix: `nextCursor==null` now means ONLY
+   true exhaustion; a cap-hit with rows still unscanned emits a resume cursor from the last SCANNED
+   row (`scanAfterId`, owner_sub-narrowed so no cross-subject id leaks). Added
+   `list_orders_resume_cursor_reaches_allowed_order_beyond_a_denied_block` (allowed order behind 20
+   denied rows is reached via the resume cursor on the second call) and tightened the cap test to
+   exactly 20 SpiceDB checks + a non-null resume cursor.
+
+Not actioned (non-critical, noted): per-request cost still scales with page size (~1010 checks at
+maxPageSize=100 — bounded, acceptable); `MAX_SCAN_BATCHES` could be promoted to `OrderProperties`
+typed config (altitude/convention). Verified: order-service 68/68; full browser E2E 10 passed / 8
+skipped (harness-controlled); `verify-live-all.sh` EXIT 0 (19 SEC gates green).
+
 Code-review security fixes (second pass) — ACCEPTED + COMMITTED 2026-06-30. A `/code-review` run
 on `git diff 2e7b690...HEAD` (order-history + merchant catalog + catalog-card quick-add, commits
 51d39e3 through ad2e750) surfaced 10 findings; all 10 fixed and live E2E verified. A follow-up
@@ -445,6 +483,38 @@ Results: all commands passed. Notes: frontend commands warn that this shell is o
 repo pins Node 26.3.0; lint still reports the two pre-existing shadcn Fast Refresh warnings in
 `frontend/src/components/ui/badge.tsx` and `frontend/src/components/ui/button.tsx`; the first Maven run
 with default Java failed before code on JDK 25, then passed with `JAVA_HOME` set to Java 26.
+
+Code-review fixes (Vercel React pass + pagination-scan hardening) accepted + pushed 2026-07-01:
+
+```sh
+# A. Vercel React best-practices pass (commit cdc33fd) — frontend only
+cd frontend && corepack pnpm run typecheck && corepack pnpm run test   # 72/72 green
+
+# B. scan-cap DoS (8a3ac5f) + resume-cursor (a38ac57) — order-service
+JAVA_HOME=$HOME/.sdkman/candidates/java/26.0.1-amzn \
+  DOCKER_HOST=unix://$HOME/.orbstack/run/docker.sock \
+  TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=$HOME/.orbstack/run/docker.sock \
+  auth-service/mvnw -B -f pom.xml -pl order-service -am clean test    # 68/68 green
+
+# rebuild the changed service, then full live battery + browser E2E
+DOCKER_HOST=unix://$HOME/.orbstack/run/docker.sock docker compose build order-service
+DOCKER_HOST=unix://$HOME/.orbstack/run/docker.sock docker compose up -d order-service
+JAVA_HOME=$HOME/.sdkman/candidates/java/26.0.1-amzn \
+  DOCKER_HOST=unix://$HOME/.orbstack/run/docker.sock \
+  LIVE_ALL_SKIP_UP=1 sh scripts/verify-live-all.sh
+PATH="$HOME/.nvm/versions/node/v22.22.3/bin:$PATH" \
+  E2E_FULL_STACK=1 corepack pnpm exec playwright test \
+    tests/e2e/auth.spec.ts tests/e2e/cart-live.spec.ts tests/e2e/catalog-live.spec.ts \
+    tests/e2e/checkout-live.spec.ts tests/e2e/order-live.spec.ts --reporter=line
+```
+
+Results: frontend 72/72; order-service 68/68 (incl. the new scan-cap and resume-cursor tests);
+`verify-live-all.sh` EXIT 0 — 19 SEC gates green (cart 11, SEC-CATALOG-ANONYMOUS-READ-ONLY,
+order/payment 5, plus SEC-PAYMENT-NO-BROWSER-ROUTE / SEC-PAYMENT-WRONG-CLIENT /
+SEC-PAYMENT-REJECTS-USER-TOKEN); full browser E2E 10 passed / 8 skipped (harness-controlled). Note:
+the catalog-live merchant-write 409 recurs whenever a prior run's `SKU-merchant-live-product` is left
+in `catalog_db`; `DELETE FROM products WHERE sku LIKE '%merchant-live-product%'` before the run clears
+it (it is not a regression). Both review passes pushed to origin/master (`c7d5b73..a38ac57`).
 
 Code-review second pass (cursor/null-cursor/FE) fixes accepted 2026-06-30:
 
