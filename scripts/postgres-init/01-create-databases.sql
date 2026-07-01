@@ -5,3 +5,8 @@ CREATE DATABASE catalog_db;
 CREATE DATABASE cart_db;
 CREATE DATABASE order_db;
 CREATE DATABASE payment_db;
+-- SpiceDB's own datastore. Relationships live here so they survive SpiceDB restarts
+-- (the previous --datastore-engine=memory wiped every relationship on restart, forcing a reseed).
+-- SpiceDB owns this database's schema via `spicedb datastore migrate head` (see the spicedb-migrate
+-- service in compose.yaml); no domain service connects to it directly.
+CREATE DATABASE spicedb_db;

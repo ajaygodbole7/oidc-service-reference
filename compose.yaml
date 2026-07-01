@@ -48,16 +48,41 @@ services:
       timeout: 3s
       retries: 5
 
+  # One-shot: create/upgrade SpiceDB's Postgres schema, then exit. spicedb waits for this to
+  # complete successfully before it serves, so a fresh spicedb_db is migrated before first use.
+  spicedb-migrate:
+    image: ghcr.io/authzed/spicedb:v1.53.0
+    command:
+      - datastore
+      - migrate
+      - head
+      - --datastore-engine=postgres
+      - --datastore-conn-uri=postgres://${POSTGRES_USER:-commerce}:${POSTGRES_PASSWORD:-LOCAL_DEV_POSTGRES_PASSWORD__CHANGE_BEFORE_DEPLOY}@postgres:5432/spicedb_db?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - oidc-internal
+    restart: "no"
+
   spicedb:
     image: ghcr.io/authzed/spicedb:v1.53.0
     command:
       - serve
       - --grpc-preshared-key=${SPICEDB_PRESHARED_KEY:-LOCAL_DEV_SPICEDB_PRESHARED_KEY__CHANGE_BEFORE_DEPLOY}
       - --http-enabled
-      - --datastore-engine=memory
+      # Postgres-backed datastore: relationships persist across SpiceDB restarts (no reseed).
+      # The schema and seed relationships are written once and survive; revocation immediacy is
+      # handled by the consistency strategy (Zookie at_least_as_fresh + fully_consistent on the
+      # revocation-check path), not by wiping state.
+      - --datastore-engine=postgres
+      - --datastore-conn-uri=postgres://${POSTGRES_USER:-commerce}:${POSTGRES_PASSWORD:-LOCAL_DEV_POSTGRES_PASSWORD__CHANGE_BEFORE_DEPLOY}@postgres:5432/spicedb_db?sslmode=disable
     ports:
       - "127.0.0.1:50051:50051"
       - "127.0.0.1:8443:8443"
+    depends_on:
+      spicedb-migrate:
+        condition: service_completed_successfully
     networks:
       - oidc-internal
     healthcheck:
