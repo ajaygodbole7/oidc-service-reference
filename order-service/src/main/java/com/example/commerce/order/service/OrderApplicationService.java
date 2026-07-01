@@ -154,25 +154,42 @@ public final class OrderApplicationService {
       CommercePrincipal principal, @Nullable Integer limit, @Nullable String cursor) {
     DecisionTrace scopeTrace = scopeAuthorizer.requireScope(principal, ORDERS_READ);
     int pageSize = paginator.resolveLimit(limit);
-    String afterId = CursorPaginator.decodeCursor(cursor);
+    String scanAfterId = CursorPaginator.decodeCursor(cursor);
     // owner_sub narrows the current-user history cursor window so cursors never expose
     // unrelated order ids. SpiceDB remains the read authority for every candidate row.
-    List<Order> rawRows = orderRepository.findPageByOwnerSub(principal.subject(), afterId, pageSize + 1);
-    boolean hasMore = rawRows.size() > pageSize;
-    List<Order> window = hasMore ? rawRows.subList(0, pageSize) : rawRows;
-    List<ResourceRef> orderResources = window.stream().map(o -> orderResource(o.id())).toList();
-    List<Optional<DecisionTrace>> decisions =
-        resourceAuthorizer.filterAllowed(principal, orderResources, ORDER_READ);
     List<OrderResult> items = new ArrayList<>();
-    for (int i = 0; i < window.size(); i++) {
-      Order order = window.get(i);
-      decisions.get(i).ifPresent(trace -> items.add(new OrderResult(order, List.of(scopeTrace, trace))));
+    boolean hasMoreAllowed = false;
+    boolean exhausted = false;
+    while (!hasMoreAllowed && !exhausted) {
+      List<Order> candidates = orderRepository.findPageByOwnerSub(principal.subject(), scanAfterId, pageSize + 1);
+      if (candidates.isEmpty()) {
+        exhausted = true;
+        break;
+      }
+      List<ResourceRef> orderResources = candidates.stream().map(o -> orderResource(o.id())).toList();
+      List<Optional<DecisionTrace>> decisions =
+          resourceAuthorizer.filterAllowed(principal, orderResources, ORDER_READ);
+      for (int i = 0; i < candidates.size(); i++) {
+        Order order = candidates.get(i);
+        Optional<DecisionTrace> decision = decisions.get(i);
+        if (decision.isEmpty()) {
+          continue;
+        }
+        if (items.size() < pageSize) {
+          items.add(new OrderResult(order, List.of(scopeTrace, decision.get())));
+        } else {
+          hasMoreAllowed = true;
+          break;
+        }
+      }
+      scanAfterId = candidates.get(candidates.size() - 1).id().value();
+      exhausted = candidates.size() <= pageSize;
     }
     // Cursor encodes the last SpiceDB-allowed item's id so no denied resource id is embedded in
-    // cursors returned to the client. No cursor is emitted when items is empty (fail-closed:
-    // prevents infinite empty-page loops when all candidates in a page are SpiceDB-denied).
+    // cursors returned to the client. The internal scan can cross denied same-owner rows without
+    // exposing their ids or truncating older allowed orders.
     String lastAllowedId = items.isEmpty() ? null : items.get(items.size() - 1).order().id().value();
-    String nextCursor = hasMore && lastAllowedId != null
+    String nextCursor = hasMoreAllowed && lastAllowedId != null
         ? CursorPaginator.encodeCursor(lastAllowedId)
         : null;
     return new Page<>(List.copyOf(items), nextCursor);
