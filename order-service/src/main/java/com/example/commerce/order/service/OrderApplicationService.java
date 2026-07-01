@@ -157,10 +157,14 @@ public final class OrderApplicationService {
     String scanAfterId = CursorPaginator.decodeCursor(cursor);
     // owner_sub narrows the current-user history cursor window so cursors never expose
     // unrelated order ids. SpiceDB remains the read authority for every candidate row.
+    // MAX_SCAN_BATCHES caps DB round-trips per request: a bulk SpiceDB revocation (all rows denied)
+    // would otherwise turn one API call into O(N/pageSize) queries. At the cap we return whatever
+    // was collected (possibly < pageSize items) with no cursor — fail-closed, not fail-open.
+    final int MAX_SCAN_BATCHES = 10;
     List<OrderResult> items = new ArrayList<>();
     boolean hasMoreAllowed = false;
     boolean exhausted = false;
-    while (!hasMoreAllowed && !exhausted) {
+    for (int batch = 0; batch < MAX_SCAN_BATCHES && !hasMoreAllowed && !exhausted; batch++) {
       List<Order> candidates = orderRepository.findPageByOwnerSub(principal.subject(), scanAfterId, pageSize + 1);
       if (candidates.isEmpty()) {
         exhausted = true;
@@ -182,12 +186,16 @@ public final class OrderApplicationService {
           break;
         }
       }
-      scanAfterId = candidates.get(candidates.size() - 1).id().value();
-      exhausted = candidates.size() <= pageSize;
+      if (!hasMoreAllowed) {
+        scanAfterId = candidates.get(candidates.size() - 1).id().value();
+        exhausted = candidates.size() <= pageSize;
+      }
     }
     // Cursor encodes the last SpiceDB-allowed item's id so no denied resource id is embedded in
-    // cursors returned to the client. The internal scan can cross denied same-owner rows without
-    // exposing their ids or truncating older allowed orders.
+    // cursors returned to the client. The scan crosses denied same-owner rows without exposing
+    // their ids or truncating older allowed orders. Cursor is only emitted when a confirmed
+    // (pageSize+1)th allowed item was observed — stronger than DB hasMore, which would include
+    // denied rows.
     String lastAllowedId = items.isEmpty() ? null : items.get(items.size() - 1).order().id().value();
     String nextCursor = hasMoreAllowed && lastAllowedId != null
         ? CursorPaginator.encodeCursor(lastAllowedId)

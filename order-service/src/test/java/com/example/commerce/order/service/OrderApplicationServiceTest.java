@@ -462,6 +462,31 @@ class OrderApplicationServiceTest {
   }
 
   @Test
+  void list_orders_scan_cap_limits_db_queries_when_many_rows_are_denied() {
+    // MAX_SCAN_BATCHES=10, pageSize=1 → at most 10 batches of 2 rows each (20 SpiceDB checks).
+    // With 22 all-denied rows the cap must fire before the DB is exhausted: SpiceDB must see
+    // ≤ 20 checks, not 22 — proving the unbounded-scan DoS vector is closed.
+    List<Order> allDenied = new ArrayList<>();
+    for (int i = 22; i >= 1; i--) {
+      allDenied.add(Order.confirmed(
+          new OrderId(String.format("alice-order-%02d", i)), "alice", new CartId("alice-cart"),
+          List.of(new OrderLine(new ProductId("starter-mug"), 1, Money.usd("1.00"))),
+          Money.usd("1.00"), "auth-" + i, NOW));
+    }
+    RecordingAuthorizationClient authorizationClient = recordingClient(new InMemoryAuthorizationClient());
+    RecordingOrderRepository orderRepository = new RecordingOrderRepository(allDenied);
+    OrderApplicationService service = service(
+        orderRepository, cartLookup(), authorizationClient, new RecordingPaymentClient());
+
+    Page<OrderResult> page = service.listOrders(principal("alice", "orders:read"), 1, null);
+
+    assertThat(page.items()).isEmpty();
+    assertThat(page.nextCursor()).isNull();
+    // Cap is 10 batches × 2 candidates = 20 checks — must not reach 22
+    assertThat(authorizationClient.requests()).hasSizeLessThanOrEqualTo(20);
+  }
+
+  @Test
   void list_orders_omits_cursor_when_only_remaining_candidates_are_denied_and_exhausted() {
     // pageSize=1: alice-order is returned, then the scan crosses denied rows until the
     // candidate set is exhausted. No cursor is needed because there is no later allowed order.
