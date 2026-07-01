@@ -22,9 +22,43 @@ Every session must leave these sections populated:
 
 ## Current slice
 
-Code-review N+1 / security fixes — ACCEPTED + COMMITTED/PUSHED 2026-06-29/30 (commit 2e7b690 +
-ESLint fix), plus the 2026-06-30 cursor-leak/null-cursor follow-up. A full `/code-review` pass on
-`origin/master~8...HEAD` surfaced 10 confirmed findings; all were fixed and verified live:
+Code-review security fixes (second pass) — ACCEPTED + COMMITTED 2026-06-30. A `/code-review` run
+on `git diff 2e7b690...HEAD` (order-history + merchant catalog + catalog-card quick-add, commits
+51d39e3 through ad2e750) surfaced 10 findings; all 10 fixed and live E2E verified:
+
+**Backend (order-service)**
+1. **Cursor encodes last *allowed* id, not last fetched row** — `listOrders` now builds `nextCursor`
+   after `filterAllowed` using the last SpiceDB-granted item's id. Prevents leaking denied resource
+   ids through the cursor.
+2. **No cursor when items empty** — `nextCursor` is only emitted when `!items.isEmpty()`. Prevents
+   an infinite empty-page loop when all candidates in a page are SpiceDB-denied.
+3. **Jackson `non_null` serialization** — `spring.jackson.default-property-inclusion: non_null` added
+   to `application.yml` so `nextCursor` is omitted (not `null`) on the last page.
+4. **YAML duplicate `spring:` key merged** — three separate `spring:` blocks collapsed into one to
+   prevent SnakeYAML `DuplicateKeyException` that caused container exit(1).
+5. **Invariant proof tests restored** — two new `OrderApplicationServiceTest` cases:
+   `list_orders_cursor_encodes_last_allowed_item_not_last_fetched_row` and
+   `list_orders_does_not_emit_cursor_when_all_candidates_spicedb_denied`.
+
+**Frontend**
+6. **`isOrderList` null branch removed** — validator now rejects `nextCursor: null`; backend must
+   omit the field. Test updated to assert null is rejected.
+7. **`handleLoadMore` silent failure fixed** — `try/finally` with no catch replaced with
+   `try/catch/finally`; `loadMoreError` state surfaces network errors via `role="alert"`.
+8. **`hasMorePages` inconsistency removed** — `hasMorePages` const (used `!nextCursor`, truthy)
+   removed; all checks use `nextCursor !== undefined` (strict).
+9. **Memoized derived data** — `allPages`, `orders`, `nameByProductId` wrapped in `useMemo`;
+   aligns with Vercel React skills (costly logic memoized, not re-computed on every render).
+10. **Module-level `Intl.DateTimeFormat` cache** — `orderDateFormatter` hoisted to module scope
+    (same pattern as `Intl.NumberFormat` in `commerce.ts`); prevents allocating a new formatter
+    per render.
+
+Previously committed code-review pass (2026-06-29/30, commit 2e7b690 + ESLint fix) on
+`origin/master~8...HEAD` surfaced 10 findings including:
+- SpiceDB-before-Postgres fail-closed ordering
+- Order-history `owner_sub` cursor-window narrowing
+- Cursor/hasMore N+1 fix and `listOrders` owner predicate
+- Wire rename, batch parallelization, load-more UX, catalog prefetch, React key uniqueness
 
 1. **SpiceDB-before-Postgres (fail-closed ordering)** — `completeClaimedCheckout` now writes the
    SpiceDB `order#owner` relationship BEFORE the `@Transactional` Postgres commit, so a SpiceDB
@@ -168,9 +202,9 @@ writes succeed only through `catalog:write` plus SpiceDB `store:main#manage`.
 
 ## Exact next action
 
-Code-review N+1 / security fixes slice is ACCEPTED and pushed. All PLAN slices are done. The next work
-is a new feature slice on human direction. No outstanding correctness or security findings remain from
-the 2026-06-29/30 review pass. Candidate slices (within teaching scope):
+Both code-review passes are ACCEPTED and committed. All PLAN slices are done. The next work is a new
+feature slice on human direction. No outstanding correctness or security findings remain from either
+review pass. Candidate slices (within teaching scope):
 - Merchant dashboard / analytics screen (optional UI extension)
 - Additional security-verification cases if gaps are identified
 - Documentation or hardening improvements
@@ -421,6 +455,38 @@ Results: all commands passed. Notes: frontend commands warn that this shell is o
 repo pins Node 26.3.0; lint still reports the two pre-existing shadcn Fast Refresh warnings in
 `frontend/src/components/ui/badge.tsx` and `frontend/src/components/ui/button.tsx`; the first Maven run
 with default Java failed before code on JDK 25, then passed with `JAVA_HOME` set to Java 26.
+
+Code-review second pass (cursor/null-cursor/FE) fixes accepted 2026-06-30:
+
+```sh
+# Java (order-service)
+JAVA_HOME=$HOME/.sdkman/candidates/java/26.0.1-amzn \
+  DOCKER_HOST=unix://$HOME/.orbstack/run/docker.sock \
+  TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=$HOME/.orbstack/run/docker.sock \
+  auth-service/mvnw -B -f pom.xml -pl commerce-security-common,commerce-web-starter install -DskipTests
+JAVA_HOME=$HOME/.sdkman/candidates/java/26.0.1-amzn \
+  DOCKER_HOST=unix://$HOME/.orbstack/run/docker.sock \
+  TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=$HOME/.orbstack/run/docker.sock \
+  auth-service/mvnw -B -f pom.xml -pl order-service -am clean test
+
+# Frontend
+cd frontend && corepack pnpm run test  # 72/72 green
+
+# Live
+JAVA_HOME=$HOME/.sdkman/candidates/java/26.0.1-amzn \
+  DOCKER_HOST=unix://$HOME/.orbstack/run/docker.sock \
+  LIVE_ALL_SKIP_UP=1 sh scripts/verify-live-all.sh
+
+# Browser E2E
+PATH="$HOME/.nvm/versions/node/v22.22.3/bin:$PATH" \
+  E2E_FULL_STACK=1 corepack pnpm exec playwright test \
+    tests/e2e/auth.spec.ts tests/e2e/cart-live.spec.ts \
+    tests/e2e/checkout-live.spec.ts tests/e2e/order-live.spec.ts --reporter=line
+```
+
+Results: Java 65/65. Frontend 72/72. verify-live-all EXIT 0 (all 17 SEC gates green). Playwright
+8/8 passed (auth 2, cart 3, checkout 1, order 2); 1 pre-existing catalog-live failure unrelated to
+these changes (merchant-write 409 from prior run's product not cleaned up). 10 findings fixed.
 
 Follow-up code-review fixes local verification, 2026-06-28:
 

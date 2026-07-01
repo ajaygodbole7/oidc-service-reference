@@ -106,19 +106,34 @@ describe("OrderHistoryRoute", () => {
     expect(screen.getByRole("link", { name: /browse catalog/i })).toHaveAttribute("href", "/");
   });
 
-  it("does not show the empty state while cursor pages remain", async () => {
+  it("shows empty state and load-more button when initial page is empty with cursor", async () => {
     vi.mocked(fetchOrders)
       .mockResolvedValueOnce({ items: [], nextCursor: "next-page" })
       .mockResolvedValueOnce({ items: orders });
 
     renderOrderHistoryRoute();
 
-    expect(await screen.findByText("More orders are available.")).toBeInTheDocument();
-    expect(screen.queryByText("No orders yet")).not.toBeInTheDocument();
+    expect(await screen.findByText("No orders yet")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /load more orders/i })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /load more orders/i }));
 
     expect(await screen.findByText("ord-001")).toBeInTheDocument();
     expect(vi.mocked(fetchOrders)).toHaveBeenLastCalledWith(expect.any(AbortSignal), "next-page");
+  });
+
+  it("shows an error alert when loading more orders fails", async () => {
+    vi.mocked(fetchOrders)
+      .mockResolvedValueOnce({ items: orders, nextCursor: "next-page" })
+      .mockRejectedValueOnce(new Error("Network error"));
+
+    renderOrderHistoryRoute();
+
+    expect(await screen.findByText("ord-001")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /load more orders/i }));
+
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Network error");
+    expect(screen.getByRole("button", { name: /load more orders/i })).not.toBeDisabled();
   });
 });

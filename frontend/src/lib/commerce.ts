@@ -303,7 +303,7 @@ function isOrderList(value: unknown): value is OrderPage {
   return (
     Array.isArray(list.items) &&
     list.items.every(isOrder) &&
-    (list.nextCursor === undefined || list.nextCursor === null || typeof list.nextCursor === "string")
+    (list.nextCursor === undefined || typeof list.nextCursor === "string")
   );
 }
 

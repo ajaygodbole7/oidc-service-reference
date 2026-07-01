@@ -10,7 +10,17 @@ management:
       exposure:
         include: health
 
-spring.application.name: order-service
+spring:
+  application:
+    name: order-service
+  jackson:
+    default-property-inclusion: non_null
+  datasource:
+    url: ${ORDER_DATASOURCE_URL:jdbc:postgresql://postgres:5432/order_db}
+    username: ${ORDER_DATASOURCE_USERNAME:commerce}
+    password: ${ORDER_DATASOURCE_PASSWORD:LOCAL_DEV_POSTGRES_PASSWORD__CHANGE_BEFORE_DEPLOY}
+  flyway:
+    enabled: true
 
 logging:
   pattern:
@@ -41,11 +51,3 @@ order:
     read-timeout: ${ORDER_PAYMENT_READ_TIMEOUT:5s}
     max-attempts: ${ORDER_PAYMENT_MAX_ATTEMPTS:3}
     retry-backoff: ${ORDER_PAYMENT_RETRY_BACKOFF:200ms}
-
-spring:
-  datasource:
-    url: ${ORDER_DATASOURCE_URL:jdbc:postgresql://postgres:5432/order_db}
-    username: ${ORDER_DATASOURCE_USERNAME:commerce}
-    password: ${ORDER_DATASOURCE_PASSWORD:LOCAL_DEV_POSTGRES_PASSWORD__CHANGE_BEFORE_DEPLOY}
-  flyway:
-    enabled: true

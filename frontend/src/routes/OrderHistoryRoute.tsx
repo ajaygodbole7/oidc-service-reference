@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useSuspenseQuery, useQueryClient } from "@tanstack/react-query";
 import { createLazyRoute, Link, type ErrorComponentProps } from "@tanstack/react-router";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +9,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { formatMoney, type Order, type OrderPage } from "@/lib/commerce";
 import { catalogQueryOptions, ordersQueryOptions } from "@/lib/queries";
 
+const orderDateFormatter = new Intl.DateTimeFormat("en-US", {
+  dateStyle: "medium",
+  timeStyle: "short"
+});
+
 function OrderHistoryScreen() {
   const { data: firstPage } = useSuspenseQuery(ordersQueryOptions());
   const { data: catalogProducts } = useSuspenseQuery(catalogQueryOptions());
@@ -16,19 +21,25 @@ function OrderHistoryScreen() {
 
   const [extraPages, setExtraPages] = useState<readonly OrderPage[]>([]);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
 
-  const allPages = [firstPage, ...extraPages];
-  const orders = allPages.flatMap((p) => p.items);
+  const allPages = useMemo(() => [firstPage, ...extraPages], [firstPage, extraPages]);
+  const orders = useMemo(() => allPages.flatMap((p) => p.items), [allPages]);
   const nextCursor = allPages.at(-1)?.nextCursor;
-  const hasMorePages = nextCursor !== undefined;
-  const nameByProductId = new Map(catalogProducts.map((p) => [p.id, p.name]));
+  const nameByProductId = useMemo(
+    () => new Map(catalogProducts.map((p) => [p.id, p.name])),
+    [catalogProducts]
+  );
 
   async function handleLoadMore() {
-    if (!nextCursor || isLoadingMore) return;
+    if (nextCursor === undefined || isLoadingMore) return;
     setIsLoadingMore(true);
+    setLoadMoreError(null);
     try {
       const page = await queryClient.fetchQuery(ordersQueryOptions(nextCursor));
       setExtraPages((prev) => [...prev, page]);
+    } catch (err) {
+      setLoadMoreError(err instanceof Error ? err.message : "Failed to load more orders.");
     } finally {
       setIsLoadingMore(false);
     }
@@ -45,14 +56,17 @@ function OrderHistoryScreen() {
         </p>
       </header>
       <Separator />
-      {orders.length === 0 && !hasMorePages ? (
+      {orders.length === 0 ? (
         <EmptyOrders />
-      ) : orders.length === 0 ? (
-        <p className="text-sm text-muted-foreground">More orders are available.</p>
       ) : (
         <OrderList orders={orders} nameByProductId={nameByProductId} />
       )}
-      {hasMorePages ? (
+      {loadMoreError ? (
+        <p className="text-sm text-destructive" role="alert">
+          {loadMoreError}
+        </p>
+      ) : null}
+      {nextCursor !== undefined ? (
         <Button
           variant="outline"
           size="sm"
@@ -93,10 +107,7 @@ function OrderList({
             <div className="min-w-0">
               <CardTitle className="truncate text-base">{order.id}</CardTitle>
               <p className="mt-1 text-sm text-muted-foreground">
-                {new Intl.DateTimeFormat("en-US", {
-                  dateStyle: "medium",
-                  timeStyle: "short"
-                }).format(new Date(order.createdAt))}
+                {orderDateFormatter.format(new Date(order.createdAt))}
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-3">

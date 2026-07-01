@@ -160,9 +160,6 @@ public final class OrderApplicationService {
     List<Order> rawRows = orderRepository.findPageByOwnerSub(principal.subject(), afterId, pageSize + 1);
     boolean hasMore = rawRows.size() > pageSize;
     List<Order> window = hasMore ? rawRows.subList(0, pageSize) : rawRows;
-    // Cursor encodes the last *fetched* row, not the last SpiceDB-allowed item, so denied rows
-    // between the cursor boundary and the page boundary are not re-fetched on subsequent pages.
-    String lastFetchedId = window.isEmpty() ? null : window.get(window.size() - 1).id().value();
     List<ResourceRef> orderResources = window.stream().map(o -> orderResource(o.id())).toList();
     List<Optional<DecisionTrace>> decisions =
         resourceAuthorizer.filterAllowed(principal, orderResources, ORDER_READ);
@@ -171,8 +168,12 @@ public final class OrderApplicationService {
       Order order = window.get(i);
       decisions.get(i).ifPresent(trace -> items.add(new OrderResult(order, List.of(scopeTrace, trace))));
     }
-    String nextCursor = hasMore && lastFetchedId != null
-        ? CursorPaginator.encodeCursor(lastFetchedId)
+    // Cursor encodes the last SpiceDB-allowed item's id so no denied resource id is embedded in
+    // cursors returned to the client. No cursor is emitted when items is empty (fail-closed:
+    // prevents infinite empty-page loops when all candidates in a page are SpiceDB-denied).
+    String lastAllowedId = items.isEmpty() ? null : items.get(items.size() - 1).order().id().value();
+    String nextCursor = hasMore && lastAllowedId != null
+        ? CursorPaginator.encodeCursor(lastAllowedId)
         : null;
     return new Page<>(List.copyOf(items), nextCursor);
   }

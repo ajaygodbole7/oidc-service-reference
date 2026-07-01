@@ -380,6 +380,63 @@ class OrderApplicationServiceTest {
   }
 
   @Test
+  void list_orders_cursor_encodes_last_allowed_item_not_last_fetched_row() {
+    // pageSize=2: 3 rows fetched (hasMore=true). SpiceDB grants the first row (alice-zz-order)
+    // but denies the second (alice-aa-order). Cursor must encode the last *allowed* id, not the
+    // last fetched id — emitting alice-aa-order's id would leak a denied resource id to the client.
+    Order grantedOrder = Order.confirmed(
+        new OrderId("alice-zz-order"), "alice", new CartId("alice-cart"),
+        List.of(new OrderLine(new ProductId("starter-mug"), 1, Money.usd("12.50"))),
+        Money.usd("12.50"), "auth-alice-zz", NOW);
+    Order deniedOrder = Order.confirmed(
+        new OrderId("alice-aa-order"), "alice", new CartId("alice-cart"),
+        List.of(new OrderLine(new ProductId("starter-mug"), 1, Money.usd("12.50"))),
+        Money.usd("12.50"), "auth-alice-aa", NOW);
+    Order sentinelOrder = Order.confirmed(
+        new OrderId("alice-00-order"), "alice", new CartId("alice-cart"),
+        List.of(new OrderLine(new ProductId("starter-mug"), 1, Money.usd("12.50"))),
+        Money.usd("12.50"), "auth-alice-00", NOW);
+    ResourceRef grantedRef = new ResourceRef("order", "alice-zz-order");
+    RecordingAuthorizationClient authorizationClient = recordingClient(
+        new InMemoryAuthorizationClient().grant(SubjectRef.user("alice"), grantedRef, READ));
+    RecordingOrderRepository orderRepository = new RecordingOrderRepository(
+        List.of(grantedOrder, deniedOrder, sentinelOrder));
+    OrderApplicationService service = service(
+        orderRepository, cartLookup(), authorizationClient, new RecordingPaymentClient());
+
+    Page<OrderResult> page = service.listOrders(principal("alice", "orders:read"), 2, null);
+
+    // DESC sort: alice-zz > alice-aa > alice-00; window=[alice-zz, alice-aa]; sentinel=alice-00
+    assertThat(page.items())
+        .extracting(result -> result.order().id())
+        .containsExactly(new OrderId("alice-zz-order"));
+    assertThat(page.nextCursor()).isNotNull();
+    assertThat(CursorPaginator.decodeCursor(page.nextCursor())).isEqualTo("alice-zz-order");
+  }
+
+  @Test
+  void list_orders_does_not_emit_cursor_when_all_candidates_spicedb_denied() {
+    // When SpiceDB denies every row in the current page window, items is empty and no cursor
+    // is emitted. This prevents the client from entering an infinite loop of empty-page requests.
+    RecordingAuthorizationClient authorizationClient = recordingClient(new InMemoryAuthorizationClient());
+    RecordingOrderRepository orderRepository = new RecordingOrderRepository(List.of(
+        aliceOrder(),
+        Order.confirmed(
+            new OrderId("alice-00-order"), "alice", new CartId("alice-cart"),
+            List.of(new OrderLine(new ProductId("starter-mug"), 1, Money.usd("12.50"))),
+            Money.usd("12.50"), "auth-alice-00", NOW)));
+    OrderApplicationService service = service(
+        orderRepository, cartLookup(), authorizationClient, new RecordingPaymentClient());
+
+    Page<OrderResult> page = service.listOrders(principal("alice", "orders:read"), 1, null);
+
+    // pageSize=1: rawRows=[alice-order, alice-00-order] (2 > 1 → hasMore=true),
+    // window=[alice-order], SpiceDB denies it (no grants), items=[]
+    assertThat(page.items()).isEmpty();
+    assertThat(page.nextCursor()).isNull();
+  }
+
+  @Test
   void list_orders_hasMore_is_determined_before_spicedb_filter_not_after() {
     // pageSize=1: repository fetches 2 rows (hasMore=true). alice-order has a SpiceDB grant;
     // alice-00-order (the +1 sentinel, lexically lower) is orphaned. Before this fix,
