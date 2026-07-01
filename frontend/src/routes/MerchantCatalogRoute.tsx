@@ -57,8 +57,10 @@ function CreateProductForm() {
     async (_prev, formData) => {
       try {
         const product = await createCatalogProduct(draftFromFormData(formData, true));
-        await queryClient.invalidateQueries({ queryKey: queryKeys.catalog });
-        await queryClient.invalidateQueries({ queryKey: queryKeys.product(product.id) });
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: queryKeys.catalog }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.product(product.id) })
+        ]);
         return `Created ${product.name}`;
       } catch (e) {
         return e instanceof Error ? e.message : "Could not create product";

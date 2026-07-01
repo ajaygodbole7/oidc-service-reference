@@ -346,8 +346,10 @@ function isNonNegativeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
+const CURRENCY_CODE_RE = /^[A-Z]{3}$/;
+
 function isCurrencyCode(value: unknown): value is string {
-  return typeof value === "string" && /^[A-Z]{3}$/.test(value);
+  return typeof value === "string" && CURRENCY_CODE_RE.test(value);
 }
 
 function isInventoryStatus(value: unknown): value is InventoryStatus {

@@ -17,17 +17,15 @@ export function QuickAddToCart({ product }: QuickAddToCartProps) {
     setOptimisticAdding(true);
     queryClient.setQueryData<Cart>(cartQueryOptions().queryKey, (current) => {
       const base = current ?? emptyCart();
-      const items = base.items.some((item) => item.productId === product.id)
-        ? base.items.map((item) =>
-            item.productId === product.id
-              ? {
-                  ...item,
-                  quantity: item.quantity + 1,
-                  lineTotalCents: item.lineTotalCents + product.priceCents
-                }
-              : item
-          )
-        : [
+      const existingIdx = base.items.findIndex((item) => item.productId === product.id);
+      const items =
+        existingIdx !== -1
+          ? base.items.map((item, i) =>
+              i === existingIdx
+                ? { ...item, quantity: item.quantity + 1, lineTotalCents: item.lineTotalCents + product.priceCents }
+                : item
+            )
+          : [
             ...base.items,
             {
               id: product.id,

@@ -1,4 +1,4 @@
-import { useActionState, useOptimistic, useState } from "react";
+import { useActionState, useMemo, useOptimistic, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { loginHref } from "@/auth";
@@ -83,8 +83,9 @@ function CartItemList({
   // CartResponse echoes the product id as the line name; the SPA already fetches the catalog, so join
   // item.productId to the catalog product name here, falling back to the id echo.
   const { data: catalogProducts } = useQuery(catalogQueryOptions());
-  const nameByProductId = new Map(
-    (catalogProducts ?? []).map((product) => [product.id, product.name])
+  const nameByProductId = useMemo(
+    () => new Map((catalogProducts ?? []).map((product) => [product.id, product.name])),
+    [catalogProducts]
   );
   const [, submitRemove, isRemoving] = useActionState<null, FormData>(
     async (_prev, formData) => {

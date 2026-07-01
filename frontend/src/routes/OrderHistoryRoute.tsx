@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useSuspenseQuery, useQueryClient } from "@tanstack/react-query";
 import { createLazyRoute, Link, type ErrorComponentProps } from "@tanstack/react-router";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +22,10 @@ function OrderHistoryScreen() {
   const [extraPages, setExtraPages] = useState<readonly OrderPage[]>([]);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
+  // Ref guards against a double-click firing two concurrent fetches: synchronous
+  // read/write is not subject to React's batching, unlike reading isLoadingMore
+  // from the render closure.
+  const isLoadingMoreRef = useRef(false);
 
   const allPages = useMemo(() => [firstPage, ...extraPages], [firstPage, extraPages]);
   const orders = useMemo(() => allPages.flatMap((p) => p.items), [allPages]);
@@ -32,7 +36,8 @@ function OrderHistoryScreen() {
   );
 
   async function handleLoadMore() {
-    if (nextCursor === undefined || isLoadingMore) return;
+    if (nextCursor === undefined || isLoadingMoreRef.current) return;
+    isLoadingMoreRef.current = true;
     setIsLoadingMore(true);
     setLoadMoreError(null);
     try {
@@ -41,6 +46,7 @@ function OrderHistoryScreen() {
     } catch (err) {
       setLoadMoreError(err instanceof Error ? err.message : "Failed to load more orders.");
     } finally {
+      isLoadingMoreRef.current = false;
       setIsLoadingMore(false);
     }
   }

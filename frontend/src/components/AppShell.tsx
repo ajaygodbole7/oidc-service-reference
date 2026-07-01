@@ -1,4 +1,4 @@
-import { useActionState } from "react";
+import { useActionState, useMemo } from "react";
 import { Link, Outlet } from "@tanstack/react-router";
 import { loginHref, signOut } from "@/auth";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,10 @@ export function AppShell() {
   // cart cache via setQueryData(cartQueryOptions(), …) — this read sees that
   // write instantly, then the post-add invalidate reconciles it.
   const cart = useCart(user != null);
-  const itemCount = (cart.data?.items ?? []).reduce((sum, item) => sum + item.quantity, 0);
+  const itemCount = useMemo(
+    () => (cart.data?.items ?? []).reduce((sum, item) => sum + item.quantity, 0),
+    [cart.data]
+  );
 
   // React 19 form Action for sign-out. signOut() stays in auth.ts (no token
   // logic moves into the view); the Action just calls it, and React's built-in
