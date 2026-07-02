@@ -30,8 +30,16 @@ frontend shell, test harness), then add domain services + resource authorization
   server-side, gateway injects it (phantom token). **No per-hop token exchange, no
   resolve-time `resource` param** — reuse `oidc-reference`'s token model.
 - **Least privilege = scopes/roles in the JWT (coarse) + SpiceDB ReBAC (fine).**
-- **ReBAC = SpiceDB** behind an `AuthorizationClient` adapter; **per-request `Check`,
-  fail-closed**, `fully_consistent` (so relationship revocation is immediate).
+- **ReBAC = SpiceDB** behind an `AuthorizationClient` adapter; **fail-closed** always.
+  Point gates (single-resource read/cancel) use per-request `Check`; **list gates use
+  `LookupResources`** (ask SpiceDB which ids the subject may see, then page those ids in the
+  domain store — never a `WHERE owner_id` filter). **Consistency strategy (revised 2026-07-01,
+  supersedes the original "`fully_consistent` everywhere"):** reads request a `ReadConsistency`
+  the SpiceDB adapter maps — security-critical point/mutation gates stay `fully_consistent`;
+  list/read-your-writes paths use a Zookie (`at_least_as_fresh` against the adapter's high-water
+  ZedToken from its most recent write), falling back to `minimize_latency` before any write.
+  SpiceDB runs on a **persistent Postgres datastore** (`spicedb_db`), so relationships survive
+  restarts (no reseed).
 - **S2S = client-credentials + structured command** (order→payment), separate
   `payment-service` audience. Payment authorizes the *caller* and trusts `userSub` as data;
   RFC 8693 token exchange is the documented future upgrade for cryptographic user provenance.
@@ -280,7 +288,11 @@ untagged entries are host-wide and stay here.
   enforced explicitly in code, not delegated to a default chain.
 - `[→ commerce-security-common + backend services]` SpiceDB is new here: application services use `ResourceAuthorizer`; the
   `AuthorizationClient` adapter hides the SpiceDB SDK (don't scatter SDK calls through
-  controllers), uses `fully_consistent` checks, and proves fail-closed when unavailable.
+  controllers), maps a `ReadConsistency` requirement to a SpiceDB `Consistency` (point/mutation
+  gates `fully_consistent`; list/read-your-writes via a high-water ZedToken), exposes
+  `LookupResources` for list gates, and proves fail-closed when unavailable. The adapter's
+  high-water ZedToken is in-memory per instance (fine single-node; a multi-instance deploy would
+  persist/share it — see `docs/production-hardening.md`).
 
 ## Pointers
 - `PLAN.md` — the build spec (architecture, four-gate ladder, SpiceDB schema, services,

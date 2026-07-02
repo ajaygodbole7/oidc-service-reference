@@ -22,6 +22,43 @@ Every session must leave these sections populated:
 
 ## Current slice
 
+SpiceDB LookupResources + persistent datastore + Zookie consistency — ACCEPTED + COMMITTED
+2026-07-01. Human-directed platform hardening (from the "Head of Eng" review punch-list). Two slices:
+
+**Slice 1 — persistent Postgres datastore** (commit `83f3bb5`). SpiceDB moved off
+`--datastore-engine=memory` (wiped on every restart, forcing a reseed) onto the Postgres we already
+run: new `spicedb_db`, a one-shot `spicedb-migrate` service (`datastore migrate head`) that `spicedb`
+waits on via `service_completed_successfully`. Proven: wrote a relationship, restarted the container,
+the check still returned HAS_PERMISSION with the row in `spicedb_db.relation_tuple`. The
+reseed-after-restart harness pain is gone.
+
+**Slice 2 — LookupResources for list authz + Zookie read-your-writes.** Replaces the fetch-then-
+filter-per-row scan in `listOrders` (the source of every cursor/scan/cap/resume bug in the prior
+reviews) with SpiceDB `LookupResources`:
+- `commerce-security-common`: new `ReadConsistency` enum (FULLY_CONSISTENT / READ_YOUR_WRITES /
+  MINIMIZE_LATENCY); `AuthorizationClient.lookupResources` + consistency-aware `check` (both defaulted
+  so cart/catalog/payment are untouched); `SpiceDbAuthorizationClient` maps the requirement to a
+  SpiceDB `Consistency`, keeps an in-memory high-water ZedToken (advanced on every write) for
+  `at_least_as_fresh`, and streams `LookupResources`; `InMemoryAuthorizationClient.lookupResources`
+  over its grant set; `ResourceAuthorizer.lookupAllowedResourceIds` (fail-closed, one bounded trace).
+- Schema: added `order#owned = owner` — an owner-only list permission so a support agent's history
+  (LookupResources on `owned`) does NOT enumerate orders they merely support-read; `read` stays
+  `owner + support` for `getOrder`.
+- `order-service`: `listOrders` now does one `LookupResources(order, owned, READ_YOUR_WRITES)` then
+  keyset-pages the allowed ids in Postgres (`findPageByIdsDesc`, `id IN (:ids) ... ORDER BY id DESC`).
+  The scan loop, `MAX_SCAN_BATCHES`, and resume cursor are deleted. READ_YOUR_WRITES makes a
+  just-placed order appear immediately (the checkout owner-write advances the high-water ZedToken).
+  Point read/cancel keep per-request `Check` (fully_consistent). owner_sub is no longer used for
+  authorization (SpiceDB owns the set).
+
+Verified: commerce-security-common 15 offline + 4 live (incl. live `lookupResources` +
+read-your-writes); order-service 64 (rewritten list tests: lookup-not-per-row, owner-only history,
+keyset pagination, orphan-row omitted, empty, fail-closed); `verify-live-all.sh` 19 SEC gates green
+against the new path; full browser E2E (auth/cart/catalog/checkout/order) green — checkout→/orders
+exercises LookupResources + read-your-writes live. AGENTS.md locked ReBAC decision revised
+(supersedes "`fully_consistent` everywhere"). Not done (documented hardening): the high-water ZedToken
+is in-memory per instance (a multi-instance deploy would persist/share it).
+
 Code-review fixes (Vercel React pass + pagination-scan hardening) — ACCEPTED + COMMITTED + PUSHED
 2026-07-01. Two review passes on top of the second-pass work below:
 
@@ -483,6 +520,41 @@ Results: all commands passed. Notes: frontend commands warn that this shell is o
 repo pins Node 26.3.0; lint still reports the two pre-existing shadcn Fast Refresh warnings in
 `frontend/src/components/ui/badge.tsx` and `frontend/src/components/ui/button.tsx`; the first Maven run
 with default Java failed before code on JDK 25, then passed with `JAVA_HOME` set to Java 26.
+
+SpiceDB LookupResources + persistent datastore + Zookie consistency accepted 2026-07-01:
+
+```sh
+# Slice 1 — persistent datastore (compose + init SQL). spicedb_db created on the existing volume:
+docker compose exec -T postgres createdb -U commerce spicedb_db
+docker compose up spicedb-migrate     # datastore migrate head -> exit 0
+docker compose up -d spicedb          # serve --datastore-engine=postgres
+# persistence proof: write relationship -> restart spicedb -> check still HAS_PERMISSION (relation_tuple row survived)
+
+# Slice 2 — shared module + order-service
+JAVA_HOME=$HOME/.sdkman/candidates/java/26.0.1-amzn \
+  auth-service/mvnw -B -f pom.xml -pl commerce-security-common -Dtest=AuthorizerPrimitivesTest test   # 15/15
+JAVA_HOME=$HOME/.sdkman/candidates/java/26.0.1-amzn SPICEDB_LIVE_TEST=true \
+  SPICEDB_TARGET=127.0.0.1:50051 SPICEDB_PRESHARED_KEY=...__CHANGE_BEFORE_DEPLOY \
+  auth-service/mvnw -B -f pom.xml -pl commerce-security-common -Dtest=SpiceDbAuthorizationClientLiveTest test  # 4/4 live
+JAVA_HOME=$HOME/.sdkman/candidates/java/26.0.1-amzn DOCKER_HOST=unix://$HOME/.orbstack/run/docker.sock \
+  TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=$HOME/.orbstack/run/docker.sock \
+  auth-service/mvnw -B -f pom.xml -pl order-service -am clean test   # 64/64
+
+# Live: rebuild order-service, reseed schema (now has order#owned) + relationships, run battery + E2E
+docker compose build order-service && docker compose up -d order-service
+JAVA_HOME=... SPICEDB_LIVE_TEST=true ... sh scripts/verify-commerce-security-common.sh   # reseed
+LIVE_ALL_SKIP_UP=1 sh scripts/verify-live-all.sh
+E2E_FULL_STACK=1 corepack pnpm exec playwright test tests/e2e/*.spec.ts --reporter=line
+```
+
+Results: shared 15 offline + 4 live; order-service 64/64; `verify-live-all` 19 SEC gates green
+(cart 11, catalog 1, order/payment 5, payment contract 3 — reported across the sub-harnesses);
+browser E2E 10 passed / 8 skipped on the first pass with the known catalog-live merchant-write 409
+(stale `SKU-merchant-live-product` left by verify-live-all's own catalog run), then catalog-live 3/3
+after `DELETE FROM products WHERE sku LIKE '%merchant-live-product%'` — not a regression. Live
+`lookupResources` + read-your-writes proven directly (write owner -> at_least_as_fresh lookup sees it)
+and end-to-end (checkout -> /orders shows the just-placed order). Both slices committed (`83f3bb5` +
+the LookupResources commit); not yet pushed.
 
 Code-review fixes (Vercel React pass + pagination-scan hardening) accepted + pushed 2026-07-01:
 

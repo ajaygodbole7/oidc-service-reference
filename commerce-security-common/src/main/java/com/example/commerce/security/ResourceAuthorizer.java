@@ -110,4 +110,31 @@ public final class ResourceAuthorizer {
       throw new AuthorizationDeniedException("resource relationship delete unavailable", trace, e);
     }
   }
+
+  /**
+   * List gate via SpiceDB LookupResources: returns the ids of {@code resourceType} the subject may
+   * access under {@code permission}, plus one bounded trace for the whole lookup. SpiceDB is the
+   * authority for the set; callers page the returned ids in their own store. Fails closed (throws)
+   * when SpiceDB is unavailable, mirroring requireAllowed.
+   */
+  public AllowedResourceIds lookupAllowedResourceIds(
+      CommercePrincipal principal,
+      String resourceType,
+      Permission permission,
+      ReadConsistency consistency) {
+    SubjectRef subject = SubjectRef.user(principal.subject());
+    try {
+      List<String> ids = client.lookupResources(subject, resourceType, permission, consistency);
+      DecisionTrace trace = DecisionTrace.resource(
+          true, subject, new ResourceRef(resourceType, "*"), permission, "lookup_resources");
+      return new AllowedResourceIds(ids, trace);
+    } catch (AuthorizationUnavailableException e) {
+      DecisionTrace trace = DecisionTrace.resource(
+          false, subject, new ResourceRef(resourceType, "*"), permission, "authorization_unavailable");
+      throw new AuthorizationDeniedException("resource authorization unavailable", trace, e);
+    }
+  }
+
+  /** Result of a LookupResources gate: the allowed resource ids and one bounded evidence trace. */
+  public record AllowedResourceIds(List<String> ids, DecisionTrace trace) {}
 }

@@ -3,15 +3,25 @@ package com.example.commerce.security;
 import com.authzed.api.v1.CheckPermissionRequest;
 import com.authzed.api.v1.CheckPermissionResponse;
 import com.authzed.api.v1.Consistency;
+import com.authzed.api.v1.LookupPermissionship;
+import com.authzed.api.v1.LookupResourcesRequest;
+import com.authzed.api.v1.LookupResourcesResponse;
 import com.authzed.api.v1.ObjectReference;
 import com.authzed.api.v1.PermissionsServiceGrpc;
 import com.authzed.api.v1.RelationshipUpdate;
 import com.authzed.api.v1.SubjectReference;
 import com.authzed.api.v1.WriteRelationshipsRequest;
+import com.authzed.api.v1.WriteRelationshipsResponse;
+import com.authzed.api.v1.ZedToken;
 import com.authzed.grpcutil.BearerToken;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Real SpiceDB adapter for gate 4. The SDK is contained here; services depend on the
@@ -22,6 +32,11 @@ public final class SpiceDbAuthorizationClient implements AuthorizationClient, Au
   private final ManagedChannel channel;
   private final PermissionsServiceGrpc.PermissionsServiceBlockingStub permissions;
   private final long deadlineMillis;
+  // High-water ZedToken from this process's most recent relationship write. READ_YOUR_WRITES reads
+  // pin at_least_as_fresh to it, so a just-written grant is visible on the next read without paying
+  // full consistency on every call. In-memory per instance: a fresh process falls back to
+  // minimize_latency until its first write (documented as a multi-instance hardening note).
+  private final AtomicReference<@Nullable String> highWaterToken = new AtomicReference<>();
 
   public SpiceDbAuthorizationClient(String target, String presharedKey, boolean plaintext) {
     this(target, presharedKey, plaintext, 2_000);
@@ -57,9 +72,15 @@ public final class SpiceDbAuthorizationClient implements AuthorizationClient, Au
   @Override
   public AuthorizationDecision check(
       SubjectRef subject, ResourceRef resource, Permission permission) {
+    return check(subject, resource, permission, ReadConsistency.FULLY_CONSISTENT);
+  }
+
+  @Override
+  public AuthorizationDecision check(
+      SubjectRef subject, ResourceRef resource, Permission permission, ReadConsistency consistency) {
     try {
       CheckPermissionRequest request = CheckPermissionRequest.newBuilder()
-          .setConsistency(Consistency.newBuilder().setFullyConsistent(true).build())
+          .setConsistency(consistency(consistency))
           .setResource(object(resource))
           .setSubject(SubjectReference.newBuilder().setObject(object(subject)).build())
           .setPermission(permission.value())
@@ -79,6 +100,50 @@ public final class SpiceDbAuthorizationClient implements AuthorizationClient, Au
     } catch (RuntimeException e) {
       throw new AuthorizationUnavailableException("SpiceDB unavailable", e);
     }
+  }
+
+  @Override
+  public List<String> lookupResources(
+      SubjectRef subject, String resourceType, Permission permission, ReadConsistency consistency) {
+    try {
+      LookupResourcesRequest request = LookupResourcesRequest.newBuilder()
+          .setConsistency(consistency(consistency))
+          .setResourceObjectType(resourceType)
+          .setPermission(permission.value())
+          .setSubject(SubjectReference.newBuilder().setObject(object(subject)).build())
+          .build();
+      Iterator<LookupResourcesResponse> responses = permissions
+          .withDeadlineAfter(deadlineMillis, TimeUnit.MILLISECONDS)
+          .lookupResources(request);
+      List<String> resourceIds = new ArrayList<>();
+      while (responses.hasNext()) {
+        LookupResourcesResponse response = responses.next();
+        // Only fully-resolved permissions count; conditional results (caveats) are not used here.
+        if (response.getPermissionship()
+            == LookupPermissionship.LOOKUP_PERMISSIONSHIP_HAS_PERMISSION) {
+          resourceIds.add(response.getResourceObjectId());
+        }
+      }
+      return List.copyOf(resourceIds);
+    } catch (RuntimeException e) {
+      throw new AuthorizationUnavailableException("SpiceDB unavailable", e);
+    }
+  }
+
+  /** Map the SDK-free requirement to a SpiceDB Consistency, supplying our own high-water ZedToken. */
+  private Consistency consistency(ReadConsistency consistency) {
+    return switch (consistency) {
+      case FULLY_CONSISTENT -> Consistency.newBuilder().setFullyConsistent(true).build();
+      case MINIMIZE_LATENCY -> Consistency.newBuilder().setMinimizeLatency(true).build();
+      case READ_YOUR_WRITES -> {
+        String token = highWaterToken.get();
+        yield (token == null || token.isBlank())
+            ? Consistency.newBuilder().setMinimizeLatency(true).build()
+            : Consistency.newBuilder()
+                .setAtLeastAsFresh(ZedToken.newBuilder().setToken(token).build())
+                .build();
+      }
+    };
   }
 
   @Override
@@ -114,7 +179,7 @@ public final class SpiceDbAuthorizationClient implements AuthorizationClient, Au
       String relation,
       SubjectRef subject) {
     try {
-      permissions
+      WriteRelationshipsResponse response = permissions
           .withDeadlineAfter(deadlineMillis, TimeUnit.MILLISECONDS)
           .writeRelationships(WriteRelationshipsRequest.newBuilder()
               .addUpdates(RelationshipUpdate.newBuilder()
@@ -124,6 +189,10 @@ public final class SpiceDbAuthorizationClient implements AuthorizationClient, Au
                       .setRelation(relation)
                       .setSubject(SubjectReference.newBuilder().setObject(object(subject)))))
               .build());
+      // Advance the read-your-writes high-water mark to this write's revision.
+      if (response.hasWrittenAt()) {
+        highWaterToken.set(response.getWrittenAt().getToken());
+      }
     } catch (RuntimeException e) {
       throw new AuthorizationUnavailableException("SpiceDB unavailable", e);
     }

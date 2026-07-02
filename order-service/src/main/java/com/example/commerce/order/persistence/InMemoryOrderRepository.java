@@ -8,10 +8,12 @@ import com.example.commerce.order.domain.OrderLine;
 import com.example.commerce.order.domain.OrderRepository;
 import com.example.commerce.order.domain.ProductId;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.jspecify.annotations.Nullable;
 
 public final class InMemoryOrderRepository implements OrderRepository {
@@ -38,9 +40,10 @@ public final class InMemoryOrderRepository implements OrderRepository {
   }
 
   @Override
-  public List<Order> findPageByOwnerSub(String ownerSub, @Nullable String afterId, int limit) {
+  public List<Order> findPageByIdsDesc(Collection<String> allowedIds, @Nullable String afterId, int limit) {
+    Set<String> idSet = Set.copyOf(allowedIds);
     return orders.values().stream()
-        .filter(order -> order.ownerSub().equals(ownerSub))
+        .filter(order -> idSet.contains(order.id().value()))
         .filter(order -> afterId == null || order.id().value().compareTo(afterId) < 0)
         .sorted((left, right) -> right.id().value().compareTo(left.id().value()))
         .limit(limit)

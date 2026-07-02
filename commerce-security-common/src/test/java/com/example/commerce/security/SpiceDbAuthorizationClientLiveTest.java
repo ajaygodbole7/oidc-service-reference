@@ -95,6 +95,35 @@ class SpiceDbAuthorizationClientLiveTest {
     }
   }
 
+  @Test
+  void lookup_resources_returns_ids_and_reflects_read_your_writes() throws Exception {
+    assumeTrue(Boolean.parseBoolean(System.getenv("SPICEDB_LIVE_TEST")),
+        "set SPICEDB_LIVE_TEST=true to run against local SpiceDB");
+
+    seedSpiceDb();
+    Permission read = new Permission("read");
+    ResourceRef freshOrder = new ResourceRef("order", "lookup-ryw-order");
+
+    try (SpiceDbAuthorizationClient real =
+        new SpiceDbAuthorizationClient(TARGET, PRESHARED_KEY, true, 2_000)) {
+      // alice reads her seeded order via LookupResources (owner -> read).
+      assertThat(real.lookupResources(
+          SubjectRef.user("alice"), "order", read, ReadConsistency.FULLY_CONSISTENT))
+          .contains("alice-order")
+          .doesNotContain("bob-order", "lookup-ryw-order");
+
+      // Read-your-writes: after this process writes a new owner relationship, the high-water
+      // ZedToken makes it visible to an at_least_as_fresh LookupResources on the next call.
+      real.writeRelationship(new Relationship(freshOrder, "owner", SubjectRef.user("alice")));
+      assertThat(real.lookupResources(
+          SubjectRef.user("alice"), "order", read, ReadConsistency.READ_YOUR_WRITES))
+          .contains("alice-order", "lookup-ryw-order");
+
+      // cleanup so repeated runs stay deterministic against the persistent datastore.
+      real.deleteRelationship(new Relationship(freshOrder, "owner", SubjectRef.user("alice")));
+    }
+  }
+
   private static void seedSpiceDb() throws IOException {
     ManagedChannel channel = ManagedChannelBuilder.forTarget(TARGET).usePlaintext().build();
     try {

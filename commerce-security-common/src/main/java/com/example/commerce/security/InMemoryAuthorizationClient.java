@@ -1,7 +1,9 @@
 package com.example.commerce.security;
 
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 /**
  * Test fake for the AuthorizationClient port. It grants explicit resource permissions and
@@ -47,6 +49,20 @@ public final class InMemoryAuthorizationClient implements AuthorizationClient {
     return allowed ? AuthorizationDecision.allow(trace) : AuthorizationDecision.deny(trace);
   }
 
+  @Override
+  public List<String> lookupResources(
+      SubjectRef subject, String resourceType, Permission permission, ReadConsistency consistency) {
+    // The fake is strongly consistent by construction, so consistency is ignored. Return the ids of
+    // resources of the given type on which this subject holds the permission.
+    return grants.stream()
+        .filter(g -> g.subject().equals(subject)
+            && g.resource().type().equals(resourceType)
+            && g.permission().equals(permission))
+        .map(g -> g.resource().id())
+        .distinct()
+        .collect(Collectors.toUnmodifiableList());
+  }
+
   private record Grant(SubjectRef subject, ResourceRef resource, Permission permission) {}
 
   private static Set<Permission> permissionsFor(Relationship relationship) {
@@ -59,7 +75,7 @@ public final class InMemoryAuthorizationClient implements AuthorizationClient {
       return Set.of(new Permission("view"), new Permission("manage"));
     }
     if ("order".equals(resourceType) && "owner".equals(relation)) {
-      return Set.of(new Permission("read"), new Permission("cancel"));
+      return Set.of(new Permission("read"), new Permission("cancel"), new Permission("owned"));
     }
     if ("order".equals(resourceType) && "support".equals(relation)) {
       return Set.of(new Permission("read"));

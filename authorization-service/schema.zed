@@ -17,4 +17,8 @@ definition order {
   relation support: user
   permission read = owner + support
   permission cancel = owner
+  // "My order history" list gate (LookupResources). Owner-only on purpose: a support agent can
+  // read a specific order (read = owner + support) but must not have every order they support
+  // enumerated into their own history. Distinct from read so the list stays the caller's own orders.
+  permission owned = owner
 }

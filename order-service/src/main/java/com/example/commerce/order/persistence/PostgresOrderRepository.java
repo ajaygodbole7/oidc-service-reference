@@ -8,6 +8,7 @@ import com.example.commerce.order.domain.OrderLine;
 import com.example.commerce.order.domain.OrderRepository;
 import com.example.commerce.order.domain.OrderStatus;
 import com.example.commerce.order.domain.ProductId;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -43,8 +44,11 @@ public final class PostgresOrderRepository implements OrderRepository {
   }
 
   @Override
-  public List<Order> findPageByOwnerSub(String ownerSub, @Nullable String afterId, int limit) {
-    return rows.findPageByOwnerSub(ownerSub, afterId, limit).stream()
+  public List<Order> findPageByIdsDesc(Collection<String> allowedIds, @Nullable String afterId, int limit) {
+    if (allowedIds.isEmpty()) {
+      return List.of();
+    }
+    return rows.findPageByIdsDesc(allowedIds, afterId, limit).stream()
         .map(PostgresOrderRepository::toDomain)
         .toList();
   }

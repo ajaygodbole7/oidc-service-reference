@@ -30,6 +30,7 @@ import com.example.commerce.security.AuthorizationDecision;
 import com.example.commerce.security.CommercePrincipal;
 import com.example.commerce.security.DecisionTrace;
 import com.example.commerce.security.Permission;
+import com.example.commerce.security.ReadConsistency;
 import com.example.commerce.security.Relationship;
 import com.example.commerce.security.ResourceAuthorizer;
 import com.example.commerce.security.ResourceRef;
@@ -296,9 +297,10 @@ class OrderWebErrorHandlingTest {
     }
 
     @Override
-    public List<Order> findPageByOwnerSub(String ownerSub, @Nullable String afterId, int limit) {
+    public List<Order> findPageByIdsDesc(
+        java.util.Collection<String> allowedIds, @Nullable String afterId, int limit) {
       return orders.values().stream()
-          .filter(order -> order.ownerSub().equals(ownerSub))
+          .filter(order -> allowedIds.contains(order.id().value()))
           .filter(order -> afterId == null || order.id().value().compareTo(afterId) < 0)
           .sorted((left, right) -> right.id().value().compareTo(left.id().value()))
           .limit(limit)
@@ -365,6 +367,14 @@ class OrderWebErrorHandlingTest {
     public AuthorizationDecision check(SubjectRef subject, ResourceRef resource, Permission permission) {
       return AuthorizationDecision.allow(
           DecisionTrace.resource(true, subject, resource, permission, "relationship_found"));
+    }
+
+    @Override
+    public List<String> lookupResources(
+        SubjectRef subject, String resourceType, Permission permission, ReadConsistency consistency) {
+      // Test fake: the caller owns both fixture orders, so the history list sees both ids. The
+      // repository sorts them id-DESC and the cursor keys on the first when a page is truncated.
+      return List.of("alice-order", "alice-cancelled-order");
     }
 
     @Override

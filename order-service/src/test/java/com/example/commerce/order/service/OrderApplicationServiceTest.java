@@ -20,6 +20,7 @@ import com.example.commerce.security.CommercePrincipal;
 import com.example.commerce.security.DecisionTrace;
 import com.example.commerce.security.InMemoryAuthorizationClient;
 import com.example.commerce.security.Permission;
+import com.example.commerce.security.ReadConsistency;
 import com.example.commerce.security.Relationship;
 import com.example.commerce.security.ResourceAuthorizer;
 import com.example.commerce.security.ResourceRef;
@@ -246,25 +247,23 @@ class OrderApplicationServiceTest {
   }
 
   @Test
-  void list_orders_uses_owner_candidate_filter_then_spicedb_gate() {
-    // owner_sub narrows the order-history candidate set so cursors never expose unrelated order ids.
-    // SpiceDB still gates every returned candidate, so the database predicate is not authorization.
-    RecordingAuthorizationClient authorizationClient = authorizationClientWithAliceOrderRead();
+  void list_orders_returns_owned_orders_via_lookup_resources_not_per_row_checks() {
+    // Gate 4 (list form): SpiceDB LookupResources returns the ids alice OWNS; bob's order is never
+    // considered. No per-row Check is issued — the whole allowed set comes from ONE lookup on the
+    // `owned` permission, pinned at READ_YOUR_WRITES so a just-placed order is visible immediately.
+    RecordingAuthorizationClient authorizationClient = recordingClient(
+        new InMemoryAuthorizationClient()
+            .grant(new Relationship(ALICE_ORDER, "owner", SubjectRef.user("alice")))
+            .grant(new Relationship(
+                new ResourceRef("order", "bob-order"), "owner", SubjectRef.user("bob"))));
     RecordingOrderRepository orderRepository = new RecordingOrderRepository(List.of(
         aliceOrder(),
         Order.confirmed(
-            new OrderId("bob-order"),
-            "bob",
-            new CartId("bob-cart"),
+            new OrderId("bob-order"), "bob", new CartId("bob-cart"),
             List.of(new OrderLine(new ProductId("starter-mug"), 1, Money.usd("12.50"))),
-            Money.usd("12.50"),
-            "auth-bob-order",
-            NOW)));
+            Money.usd("12.50"), "auth-bob-order", NOW)));
     OrderApplicationService service = service(
-        orderRepository,
-        cartLookup(),
-        authorizationClient,
-        new RecordingPaymentClient());
+        orderRepository, cartLookup(), authorizationClient, new RecordingPaymentClient());
 
     Page<OrderResult> page = service.listOrders(principal("alice", "orders:read"), 10, null);
 
@@ -272,15 +271,22 @@ class OrderApplicationServiceTest {
         .extracting(result -> result.order().id())
         .containsExactly(new OrderId("alice-order"));
     assertThat(page.nextCursor()).isNull();
-    assertThat(authorizationClient.requests())
-        .containsExactly(new CheckRequest("user:alice", "order:alice-order", "read"));
+    // The list path is a single owned-lookup at READ_YOUR_WRITES, not a per-row Check fan-out.
+    assertThat(authorizationClient.requests()).isEmpty();
+    assertThat(authorizationClient.lookups())
+        .containsExactly(
+            new LookupRequest("user:alice", "order", "owned", ReadConsistency.READ_YOUR_WRITES));
   }
 
   @Test
-  void list_orders_is_current_user_history_not_global_support_search() {
+  void list_orders_is_current_user_history_not_support_readable_orders() {
+    // A support agent can READ alice's order (read = owner + support), but the history list uses the
+    // owner-only `owned` permission, so support's own history does not enumerate orders they merely
+    // support. This preserves "my history is my orders", not "everything I can read".
     RecordingAuthorizationClient authorizationClient = recordingClient(
         new InMemoryAuthorizationClient()
-            .grant(SubjectRef.user("support"), ALICE_ORDER, READ));
+            .grant(new Relationship(ALICE_ORDER, "owner", SubjectRef.user("alice")))
+            .grant(new Relationship(ALICE_ORDER, "support", SubjectRef.user("support"))));
     RecordingOrderRepository orderRepository = new RecordingOrderRepository(List.of(aliceOrder()));
     OrderApplicationService service = service(
         orderRepository, cartLookup(), authorizationClient, new RecordingPaymentClient());
@@ -289,7 +295,9 @@ class OrderApplicationServiceTest {
 
     assertThat(page.items()).isEmpty();
     assertThat(page.nextCursor()).isNull();
-    assertThat(authorizationClient.requests()).isEmpty();
+    assertThat(authorizationClient.lookups())
+        .containsExactly(
+            new LookupRequest("user:support", "order", "owned", ReadConsistency.READ_YOUR_WRITES));
   }
 
   @Test
@@ -327,35 +335,40 @@ class OrderApplicationServiceTest {
   }
 
   @Test
-  void list_orders_cursor_does_not_expose_other_subject_order_ids() {
-    // bob's order sorts first globally but must not enter alice's cursor window at all.
-    // The next cursor can only be derived from alice-owned candidates.
-    RecordingAuthorizationClient authorizationClient = authorizationClientWithAliceOrderRead();
+  void list_orders_keyset_paginates_allowed_ids_in_recency_order() {
+    // Three owned orders, pageSize=2 → the two newest ids DESC plus a cursor; the second page
+    // returns the oldest with a null cursor. The domain owns the id-DESC recency order; the cursor
+    // only ever keys on an allowed id (the whole set is allowed), so no denied id can be encoded.
+    RecordingAuthorizationClient authorizationClient = recordingClient(
+        new InMemoryAuthorizationClient()
+            .grant(new Relationship(new ResourceRef("order", "alice-03"), "owner", SubjectRef.user("alice")))
+            .grant(new Relationship(new ResourceRef("order", "alice-02"), "owner", SubjectRef.user("alice")))
+            .grant(new Relationship(new ResourceRef("order", "alice-01"), "owner", SubjectRef.user("alice"))));
     RecordingOrderRepository orderRepository = new RecordingOrderRepository(List.of(
-        aliceOrder(),
-        Order.confirmed(
-            new OrderId("zzz-bob-order"),
-            "bob",
-            new CartId("bob-cart"),
-            List.of(new OrderLine(new ProductId("starter-mug"), 1, Money.usd("12.50"))),
-            Money.usd("12.50"),
-            "auth-bob-zzz",
-            NOW)));
+        aliceOrderWithId("alice-03"), aliceOrderWithId("alice-02"), aliceOrderWithId("alice-01")));
     OrderApplicationService service = service(
         orderRepository, cartLookup(), authorizationClient, new RecordingPaymentClient());
 
-    Page<OrderResult> page = service.listOrders(principal("alice", "orders:read"), 1, null);
-
-    assertThat(page.items())
+    Page<OrderResult> first = service.listOrders(principal("alice", "orders:read"), 2, null);
+    assertThat(first.items())
         .extracting(result -> result.order().id())
-        .containsExactly(new OrderId("alice-order"));
-    assertThat(page.nextCursor()).isNull();
-    assertThat(authorizationClient.requests())
-        .containsExactly(new CheckRequest("user:alice", "order:alice-order", "read"));
+        .containsExactly(new OrderId("alice-03"), new OrderId("alice-02"));
+    assertThat(first.nextCursor()).isNotNull();
+    assertThat(CursorPaginator.decodeCursor(first.nextCursor())).isEqualTo("alice-02");
+
+    Page<OrderResult> second =
+        service.listOrders(principal("alice", "orders:read"), 2, first.nextCursor());
+    assertThat(second.items())
+        .extracting(result -> result.order().id())
+        .containsExactly(new OrderId("alice-01"));
+    assertThat(second.nextCursor()).isNull();
   }
 
   @Test
-  void list_orders_filters_out_orders_where_spicedb_denies_read() {
+  void list_orders_omits_postgres_rows_that_spicedb_does_not_own() {
+    // An orphaned Postgres row (a persisted order with no SpiceDB owner grant) is never returned:
+    // LookupResources omits its id, so it is not in the by-ids page. SpiceDB is the authority, not
+    // the orders table — there is no WHERE owner_sub shortcut.
     RecordingOrderRepository orderRepository = new RecordingOrderRepository(List.of(
         aliceOrder(),
         Order.confirmed(
@@ -366,7 +379,9 @@ class OrderApplicationServiceTest {
             Money.usd("12.50"),
             "auth-orphaned",
             NOW)));
-    RecordingAuthorizationClient authorizationClient = authorizationClientWithAliceOrderRead();
+    RecordingAuthorizationClient authorizationClient = recordingClient(
+        new InMemoryAuthorizationClient()
+            .grant(new Relationship(ALICE_ORDER, "owner", SubjectRef.user("alice"))));
     OrderApplicationService service = service(
         orderRepository,
         cartLookup(),
@@ -381,185 +396,43 @@ class OrderApplicationServiceTest {
   }
 
   @Test
-  void list_orders_scans_past_denied_candidates_without_exposing_denied_ids() {
-    // pageSize=2: the middle same-owner row is denied by SpiceDB. The service must scan past it
-    // internally so older allowed rows are still visible, while never encoding the denied id.
-    Order grantedOrder = Order.confirmed(
-        new OrderId("alice-zz-order"), "alice", new CartId("alice-cart"),
-        List.of(new OrderLine(new ProductId("starter-mug"), 1, Money.usd("12.50"))),
-        Money.usd("12.50"), "auth-alice-zz", NOW);
-    Order deniedOrder = Order.confirmed(
-        new OrderId("alice-aa-order"), "alice", new CartId("alice-cart"),
-        List.of(new OrderLine(new ProductId("starter-mug"), 1, Money.usd("12.50"))),
-        Money.usd("12.50"), "auth-alice-aa", NOW);
-    Order olderGrantedOrder = Order.confirmed(
-        new OrderId("alice-00-order"), "alice", new CartId("alice-cart"),
-        List.of(new OrderLine(new ProductId("starter-mug"), 1, Money.usd("12.50"))),
-        Money.usd("12.50"), "auth-alice-00", NOW);
-    ResourceRef grantedRef = new ResourceRef("order", "alice-zz-order");
-    ResourceRef olderGrantedRef = new ResourceRef("order", "alice-00-order");
-    RecordingAuthorizationClient authorizationClient = recordingClient(
-        new InMemoryAuthorizationClient()
-            .grant(SubjectRef.user("alice"), grantedRef, READ)
-            .grant(SubjectRef.user("alice"), olderGrantedRef, READ));
-    RecordingOrderRepository orderRepository = new RecordingOrderRepository(
-        List.of(grantedOrder, deniedOrder, olderGrantedOrder));
-    OrderApplicationService service = service(
-        orderRepository, cartLookup(), authorizationClient, new RecordingPaymentClient());
-
-    Page<OrderResult> page = service.listOrders(principal("alice", "orders:read"), 2, null);
-
-    // DESC sort: alice-zz > alice-aa > alice-00. alice-aa is denied, but alice-00 is returned.
-    assertThat(page.items())
-        .extracting(result -> result.order().id())
-        .containsExactly(new OrderId("alice-zz-order"), new OrderId("alice-00-order"));
-    assertThat(page.nextCursor()).isNull();
-  }
-
-  @Test
-  void list_orders_emits_cursor_when_another_allowed_order_remains() {
-    Order olderGrantedOrder = Order.confirmed(
-        new OrderId("alice-00-order"), "alice", new CartId("alice-cart"),
-        List.of(new OrderLine(new ProductId("starter-mug"), 1, Money.usd("12.50"))),
-        Money.usd("12.50"), "auth-alice-00", NOW);
-    ResourceRef olderGrantedRef = new ResourceRef("order", "alice-00-order");
-    RecordingAuthorizationClient authorizationClient = recordingClient(
-        new InMemoryAuthorizationClient()
-            .grant(SubjectRef.user("alice"), ALICE_ORDER, READ)
-            .grant(SubjectRef.user("alice"), olderGrantedRef, READ));
-    RecordingOrderRepository orderRepository = new RecordingOrderRepository(
-        List.of(aliceOrder(), olderGrantedOrder));
-    OrderApplicationService service = service(
-        orderRepository, cartLookup(), authorizationClient, new RecordingPaymentClient());
-
-    Page<OrderResult> page = service.listOrders(principal("alice", "orders:read"), 1, null);
-
-    assertThat(page.items())
-        .extracting(result -> result.order().id())
-        .containsExactly(new OrderId("alice-order"));
-    assertThat(page.nextCursor()).isNotNull();
-    assertThat(CursorPaginator.decodeCursor(page.nextCursor())).isEqualTo("alice-order");
-  }
-
-  @Test
-  void list_orders_does_not_emit_cursor_when_all_candidates_exhausted_and_denied() {
-    // When SpiceDB denies every same-owner candidate, the service scans to exhaustion and returns
-    // no cursor. This avoids both denied-id leaks and infinite empty-page loops.
+  void list_orders_is_empty_when_subject_owns_no_orders() {
+    // No owner grants → LookupResources returns nothing → empty page, null cursor, no DB by-ids call
+    // returns rows. (The orphaned Postgres row for alice is never surfaced without a SpiceDB grant.)
     RecordingAuthorizationClient authorizationClient = recordingClient(new InMemoryAuthorizationClient());
-    RecordingOrderRepository orderRepository = new RecordingOrderRepository(List.of(
-        aliceOrder(),
-        Order.confirmed(
-            new OrderId("alice-00-order"), "alice", new CartId("alice-cart"),
-            List.of(new OrderLine(new ProductId("starter-mug"), 1, Money.usd("12.50"))),
-            Money.usd("12.50"), "auth-alice-00", NOW)));
+    RecordingOrderRepository orderRepository = new RecordingOrderRepository(List.of(aliceOrder()));
     OrderApplicationService service = service(
         orderRepository, cartLookup(), authorizationClient, new RecordingPaymentClient());
 
-    Page<OrderResult> page = service.listOrders(principal("alice", "orders:read"), 1, null);
+    Page<OrderResult> page = service.listOrders(principal("alice", "orders:read"), 10, null);
 
     assertThat(page.items()).isEmpty();
     assertThat(page.nextCursor()).isNull();
   }
 
   @Test
-  void list_orders_scan_cap_limits_db_queries_when_many_rows_are_denied() {
-    // MAX_SCAN_BATCHES=10, pageSize=1 → at most 10 batches of 2 rows each (20 SpiceDB checks).
-    // With 22 all-denied rows the cap must fire before the DB is exhausted: SpiceDB must see
-    // ≤ 20 checks, not 22 — proving the unbounded-scan DoS vector is closed.
-    List<Order> allDenied = new ArrayList<>();
-    for (int i = 22; i >= 1; i--) {
-      allDenied.add(Order.confirmed(
-          new OrderId(String.format("alice-order-%02d", i)), "alice", new CartId("alice-cart"),
-          List.of(new OrderLine(new ProductId("starter-mug"), 1, Money.usd("1.00"))),
-          Money.usd("1.00"), "auth-" + i, NOW));
-    }
-    RecordingAuthorizationClient authorizationClient = recordingClient(new InMemoryAuthorizationClient());
-    RecordingOrderRepository orderRepository = new RecordingOrderRepository(allDenied);
+  void list_orders_fails_closed_when_spicedb_unavailable() {
+    // LookupResources is the gate: if SpiceDB is unavailable, listing denies rather than falling back
+    // to an unauthenticated database scan.
+    AuthorizationClient unavailable = new AuthorizationClient() {
+      @Override
+      public AuthorizationDecision check(SubjectRef s, ResourceRef r, Permission p) {
+        throw new AuthorizationUnavailableException("SpiceDB unavailable");
+      }
+
+      @Override
+      public List<String> lookupResources(
+          SubjectRef s, String resourceType, Permission p, ReadConsistency c) {
+        throw new AuthorizationUnavailableException("SpiceDB unavailable");
+      }
+    };
+    RecordingOrderRepository orderRepository = new RecordingOrderRepository(List.of(aliceOrder()));
     OrderApplicationService service = service(
-        orderRepository, cartLookup(), authorizationClient, new RecordingPaymentClient());
+        orderRepository, cartLookup(), unavailable, new RecordingPaymentClient());
 
-    Page<OrderResult> page = service.listOrders(principal("alice", "orders:read"), 1, null);
-
-    // The cap bounds a single request to exactly 10 batches × 2 candidates = 20 SpiceDB checks,
-    // never the full 22 rows — the unbounded-scan DoS vector is closed.
-    assertThat(authorizationClient.requests()).hasSize(20);
-    assertThat(page.items()).isEmpty();
-    // A resume cursor IS emitted (not null): the cap fired mid-scan with rows still unscanned, so
-    // the client can page past this denied block instead of losing allowed orders beyond it.
-    // nextCursor is null ONLY at true exhaustion (see the exhausted-and-denied test below).
-    assertThat(page.nextCursor()).isNotNull();
-  }
-
-  @Test
-  void list_orders_resume_cursor_reaches_allowed_order_beyond_a_denied_block() {
-    // Regression guard for the scan-cap truncation bug: when the cap fired mid-scan the method used
-    // to return nextCursor=null, hiding allowed orders sitting beyond a denied block larger than the
-    // scan window. Layout (DESC by id): 1 allowed (99), 20 denied (98..79), 1 older allowed (78).
-    // With pageSize=1 and MAX_SCAN_BATCHES=10 a single call scans 20 rows, so the oldest allowed
-    // order (78) is only reachable via the resume cursor on a second call.
-    List<Order> rows = new ArrayList<>();
-    for (int n = 99; n >= 78; n--) {
-      String id = String.format("alice-order-%02d", n);
-      rows.add(Order.confirmed(
-          new OrderId(id), "alice", new CartId("alice-cart"),
-          List.of(new OrderLine(new ProductId("starter-mug"), 1, Money.usd("1.00"))),
-          Money.usd("1.00"), "auth-" + n, NOW));
-    }
-    RecordingAuthorizationClient authorizationClient = recordingClient(
-        new InMemoryAuthorizationClient()
-            .grant(SubjectRef.user("alice"), new ResourceRef("order", "alice-order-99"), READ)
-            .grant(SubjectRef.user("alice"), new ResourceRef("order", "alice-order-78"), READ));
-    RecordingOrderRepository orderRepository = new RecordingOrderRepository(rows);
-    OrderApplicationService service = service(
-        orderRepository, cartLookup(), authorizationClient, new RecordingPaymentClient());
-
-    Page<OrderResult> first = service.listOrders(principal("alice", "orders:read"), 1, null);
-    assertThat(first.items())
-        .extracting(result -> result.order().id())
-        .containsExactly(new OrderId("alice-order-99"));
-    // Cap fired before the oldest allowed order was reached — a resume cursor keeps it reachable.
-    assertThat(first.nextCursor()).isNotNull();
-
-    Page<OrderResult> second =
-        service.listOrders(principal("alice", "orders:read"), 1, first.nextCursor());
-    assertThat(second.items())
-        .extracting(result -> result.order().id())
-        .containsExactly(new OrderId("alice-order-78"));
-    // True exhaustion after the oldest allowed order → null cursor.
-    assertThat(second.nextCursor()).isNull();
-  }
-
-  @Test
-  void list_orders_omits_cursor_when_only_remaining_candidates_are_denied_and_exhausted() {
-    // pageSize=1: alice-order is returned, then the scan crosses denied rows until the
-    // candidate set is exhausted. No cursor is needed because there is no later allowed order.
-    RecordingOrderRepository orderRepository = new RecordingOrderRepository(List.of(
-        aliceOrder(),
-        Order.confirmed(
-            new OrderId("alice-00-order"),
-            "alice",
-            new CartId("alice-cart"),
-            List.of(new OrderLine(new ProductId("starter-mug"), 1, Money.usd("12.50"))),
-            Money.usd("12.50"),
-            "auth-alice-00",
-            NOW)));
-    RecordingAuthorizationClient authorizationClient = authorizationClientWithAliceOrderRead();
-    OrderApplicationService service = service(
-        orderRepository,
-        cartLookup(),
-        authorizationClient,
-        new RecordingPaymentClient());
-
-    Page<OrderResult> page = service.listOrders(principal("alice", "orders:read"), 1, null);
-
-    assertThat(page.items())
-        .extracting(result -> result.order().id())
-        .containsExactly(new OrderId("alice-order"));
-    assertThat(page.nextCursor()).isNull();
-    assertThat(authorizationClient.requests())
-        .containsExactlyInAnyOrder(
-            new CheckRequest("user:alice", "order:alice-order", "read"),
-            new CheckRequest("user:alice", "order:alice-00-order", "read"));
+    assertThatThrownBy(() -> service.listOrders(principal("alice", "orders:read"), 10, null))
+        .isInstanceOf(AuthorizationDeniedException.class)
+        .hasMessageContaining("unavailable");
   }
 
   @Test
@@ -650,13 +523,17 @@ class OrderApplicationServiceTest {
   }
 
   private static Order aliceOrder() {
+    return aliceOrderWithId("alice-order");
+  }
+
+  private static Order aliceOrderWithId(String id) {
     return Order.confirmed(
-        new OrderId("alice-order"),
+        new OrderId(id),
         "alice",
         new CartId("alice-cart"),
         List.of(new OrderLine(new ProductId("starter-mug"), 1, Money.usd("12.50"))),
         Money.usd("12.50"),
-        "auth-alice-order",
+        "auth-" + id,
         NOW);
   }
 
@@ -683,10 +560,15 @@ class OrderApplicationServiceTest {
   private record CheckRequest(String subject, String resource, String permission) {
   }
 
+  private record LookupRequest(
+      String subject, String resourceType, String permission, ReadConsistency consistency) {
+  }
+
   private static final class RecordingAuthorizationClient implements AuthorizationClient {
 
     private final AuthorizationClient delegate;
     private final List<CheckRequest> requests = Collections.synchronizedList(new ArrayList<>());
+    private final List<LookupRequest> lookups = Collections.synchronizedList(new ArrayList<>());
     private final List<Relationship> relationshipWrites = Collections.synchronizedList(new ArrayList<>());
 
     private RecordingAuthorizationClient(AuthorizationClient delegate) {
@@ -697,6 +579,13 @@ class OrderApplicationServiceTest {
     public AuthorizationDecision check(SubjectRef subject, ResourceRef resource, Permission permission) {
       requests.add(new CheckRequest(subject.toString(), resource.toString(), permission.value()));
       return delegate.check(subject, resource, permission);
+    }
+
+    @Override
+    public List<String> lookupResources(
+        SubjectRef subject, String resourceType, Permission permission, ReadConsistency consistency) {
+      lookups.add(new LookupRequest(subject.toString(), resourceType, permission.value(), consistency));
+      return delegate.lookupResources(subject, resourceType, permission, consistency);
     }
 
     @Override
@@ -712,6 +601,10 @@ class OrderApplicationServiceTest {
 
     List<CheckRequest> requests() {
       return List.copyOf(requests);
+    }
+
+    List<LookupRequest> lookups() {
+      return List.copyOf(lookups);
     }
 
     List<Relationship> relationshipWrites() {
@@ -817,9 +710,10 @@ class OrderApplicationServiceTest {
     }
 
     @Override
-    public List<Order> findPageByOwnerSub(String ownerSub, @Nullable String afterId, int limit) {
+    public List<Order> findPageByIdsDesc(
+        java.util.Collection<String> allowedIds, @Nullable String afterId, int limit) {
       return orders.values().stream()
-          .filter(order -> order.ownerSub().equals(ownerSub))
+          .filter(order -> allowedIds.contains(order.id().value()))
           .filter(order -> afterId == null || order.id().value().compareTo(afterId) < 0)
           .sorted((left, right) -> right.id().value().compareTo(left.id().value()))
           .limit(limit)

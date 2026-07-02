@@ -7,6 +7,7 @@ import com.example.commerce.order.domain.OrderRepository;
 import com.example.commerce.security.CommercePrincipal;
 import com.example.commerce.security.DecisionTrace;
 import com.example.commerce.security.Permission;
+import com.example.commerce.security.ReadConsistency;
 import com.example.commerce.security.Relationship;
 import com.example.commerce.security.ResourceAuthorizer;
 import com.example.commerce.security.ResourceRef;
@@ -18,7 +19,6 @@ import com.example.commerce.web.tsid.TsidGenerator;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.function.Supplier;
 import org.jspecify.annotations.Nullable;
 
@@ -26,9 +26,12 @@ public final class OrderApplicationService {
 
   private static final String ORDERS_READ = "orders:read";
   private static final String ORDERS_WRITE = "orders:write";
+  private static final String ORDER_RESOURCE_TYPE = "order";
   private static final Permission CART_READ = new Permission("read");
   private static final Permission ORDER_READ = new Permission("read");
   private static final Permission ORDER_CANCEL = new Permission("cancel");
+  // Owner-only list permission for order history (LookupResources); read stays owner+support.
+  private static final Permission ORDER_OWNED = new Permission("owned");
 
   private final OrderRepository orderRepository;
   private final CartLookup cartLookup;
@@ -154,59 +157,25 @@ public final class OrderApplicationService {
       CommercePrincipal principal, @Nullable Integer limit, @Nullable String cursor) {
     DecisionTrace scopeTrace = scopeAuthorizer.requireScope(principal, ORDERS_READ);
     int pageSize = paginator.resolveLimit(limit);
-    String scanAfterId = CursorPaginator.decodeCursor(cursor);
-    // owner_sub narrows the current-user history cursor window so cursors never expose
-    // unrelated order ids. SpiceDB remains the read authority for every candidate row.
-    // MAX_SCAN_BATCHES caps DB round-trips per request: a bulk SpiceDB revocation (all rows denied)
-    // would otherwise turn one API call into O(N/pageSize) queries. At the cap we return whatever
-    // was collected (possibly < pageSize items) with no cursor — fail-closed, not fail-open.
-    final int MAX_SCAN_BATCHES = 10;
-    List<OrderResult> items = new ArrayList<>();
-    boolean hasMoreAllowed = false;
-    boolean exhausted = false;
-    for (int batch = 0; batch < MAX_SCAN_BATCHES && !hasMoreAllowed && !exhausted; batch++) {
-      List<Order> candidates = orderRepository.findPageByOwnerSub(principal.subject(), scanAfterId, pageSize + 1);
-      if (candidates.isEmpty()) {
-        exhausted = true;
-        break;
-      }
-      List<ResourceRef> orderResources = candidates.stream().map(o -> orderResource(o.id())).toList();
-      List<Optional<DecisionTrace>> decisions =
-          resourceAuthorizer.filterAllowed(principal, orderResources, ORDER_READ);
-      for (int i = 0; i < candidates.size(); i++) {
-        Order order = candidates.get(i);
-        Optional<DecisionTrace> decision = decisions.get(i);
-        if (decision.isEmpty()) {
-          continue;
-        }
-        if (items.size() < pageSize) {
-          items.add(new OrderResult(order, List.of(scopeTrace, decision.get())));
-        } else {
-          hasMoreAllowed = true;
-          break;
-        }
-      }
-      if (!hasMoreAllowed) {
-        scanAfterId = candidates.get(candidates.size() - 1).id().value();
-        exhausted = candidates.size() <= pageSize;
-      }
-    }
-    // nextCursor is null ONLY at true exhaustion. Three exit cases:
-    //  - hasMoreAllowed: a confirmed (pageSize+1)th allowed item exists → resume after the last
-    //    returned item's id (no denied id is ever encoded).
-    //  - cap hit (!exhausted): the scan stopped with same-owner rows still unscanned → resume from
-    //    the last SCANNED row so allowed orders beyond a denied block larger than the scan window
-    //    stay reachable across requests. scanAfterId is the owner's own row (the query is
-    //    owner_sub-narrowed), so the cursor never encodes another subject's id.
-    //  - exhausted: genuinely no more rows for this owner → null.
-    String nextCursor;
-    if (hasMoreAllowed) {
-      nextCursor = CursorPaginator.encodeCursor(items.get(items.size() - 1).order().id().value());
-    } else if (!exhausted) {
-      nextCursor = CursorPaginator.encodeCursor(scanAfterId);
-    } else {
-      nextCursor = null;
-    }
+    String afterId = CursorPaginator.decodeCursor(cursor);
+    // Gate 4, list form: SpiceDB LookupResources returns exactly the order ids this subject may read
+    // (owner or support), so there is no fetch-then-filter scan and no per-row Check fan-out. SpiceDB
+    // is the authority for the set; Postgres only keyset-pages the returned ids in recency order.
+    // READ_YOUR_WRITES pins the lookup at least as fresh as this instance's most recent owner write,
+    // so an order just persisted at checkout appears immediately. owner_sub is never an authz shortcut.
+    ResourceAuthorizer.AllowedResourceIds allowed = resourceAuthorizer.lookupAllowedResourceIds(
+        principal, ORDER_RESOURCE_TYPE, ORDER_OWNED, ReadConsistency.READ_YOUR_WRITES);
+    List<Order> window = orderRepository.findPageByIdsDesc(allowed.ids(), afterId, pageSize + 1);
+    boolean hasMore = window.size() > pageSize;
+    List<Order> pageRows = hasMore ? window.subList(0, pageSize) : window;
+    List<OrderResult> items = pageRows.stream()
+        .map(order -> new OrderResult(order, List.of(scopeTrace, allowed.trace())))
+        .toList();
+    // The cursor keys on the last returned id, which is always in the SpiceDB-allowed set, so a denied
+    // resource id can never be encoded. nextCursor is null only at the end of the allowed set.
+    String nextCursor = hasMore
+        ? CursorPaginator.encodeCursor(pageRows.get(pageRows.size() - 1).id().value())
+        : null;
     return new Page<>(List.copyOf(items), nextCursor);
   }
 

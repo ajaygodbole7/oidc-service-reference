@@ -1,5 +1,6 @@
 package com.example.commerce.order.domain;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.jspecify.annotations.Nullable;
@@ -9,10 +10,12 @@ public interface OrderRepository {
   Optional<Order> findById(OrderId orderId);
 
   /**
-   * Returns candidate orders for a subject's own order-history page in descending id order.
-   * The owner column narrows the cursor window only; SpiceDB is still the read authority.
+   * Returns the orders whose ids are in {@code allowedIds}, in descending id order, keyset-paginated
+   * after {@code afterId}. The allowed-id set comes from SpiceDB LookupResources (the authority), so
+   * this is a pure by-id fetch: Postgres owns the recency ordering, SpiceDB owns who may see what.
+   * An empty {@code allowedIds} yields an empty page without touching the database.
    */
-  List<Order> findPageByOwnerSub(String ownerSub, @Nullable String afterId, int limit);
+  List<Order> findPageByIdsDesc(Collection<String> allowedIds, @Nullable String afterId, int limit);
 
   Order save(Order order);
 }

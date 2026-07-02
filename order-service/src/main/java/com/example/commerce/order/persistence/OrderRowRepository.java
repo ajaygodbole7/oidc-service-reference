@@ -1,5 +1,6 @@
 package com.example.commerce.order.persistence;
 
+import java.util.Collection;
 import java.util.List;
 import org.jspecify.annotations.Nullable;
 import org.springframework.data.jdbc.repository.query.Query;
@@ -12,13 +13,13 @@ public interface OrderRowRepository extends CrudRepository<OrderRow, String> {
   @Query("""
       SELECT *
       FROM orders
-      WHERE owner_sub = :ownerSub
+      WHERE id IN (:ids)
         AND (:afterId IS NULL OR id < :afterId)
       ORDER BY id DESC
       LIMIT :limit
       """)
-  List<OrderRow> findPageByOwnerSub(
-      @Param("ownerSub") String ownerSub,
+  List<OrderRow> findPageByIdsDesc(
+      @Param("ids") Collection<String> ids,
       @Param("afterId") @Nullable String afterId,
       @Param("limit") int limit);
 }

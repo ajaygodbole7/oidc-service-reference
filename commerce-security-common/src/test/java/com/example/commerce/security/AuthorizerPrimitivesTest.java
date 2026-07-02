@@ -105,6 +105,46 @@ class AuthorizerPrimitivesTest {
   }
 
   @Test
+  void lookup_allowed_resource_ids_returns_only_granted_ids_of_the_type() {
+    InMemoryAuthorizationClient client = new InMemoryAuthorizationClient()
+        .grant(SubjectRef.user("alice"), new ResourceRef("order", "order-a"), new Permission("read"))
+        .grant(SubjectRef.user("alice"), new ResourceRef("order", "order-b"), new Permission("read"))
+        // different subject, type, and permission must be excluded
+        .grant(SubjectRef.user("bob"), new ResourceRef("order", "order-c"), new Permission("read"))
+        .grant(SubjectRef.user("alice"), new ResourceRef("cart", "cart-a"), new Permission("read"))
+        .grant(SubjectRef.user("alice"), new ResourceRef("order", "order-d"), new Permission("cancel"));
+    ResourceAuthorizer authorizer = new ResourceAuthorizer(client);
+
+    ResourceAuthorizer.AllowedResourceIds allowed = authorizer.lookupAllowedResourceIds(
+        ALICE, "order", new Permission("read"), ReadConsistency.READ_YOUR_WRITES);
+
+    assertThat(allowed.ids()).containsExactlyInAnyOrder("order-a", "order-b");
+    assertThat(allowed.trace().allowed()).isTrue();
+    assertThat(allowed.trace().reason()).isEqualTo("lookup_resources");
+  }
+
+  @Test
+  void lookup_allowed_resource_ids_fails_closed_when_client_unavailable() {
+    AuthorizationClient unavailable = new AuthorizationClient() {
+      @Override
+      public AuthorizationDecision check(SubjectRef s, ResourceRef r, Permission p) {
+        throw new AuthorizationUnavailableException("SpiceDB unavailable");
+      }
+
+      @Override
+      public java.util.List<String> lookupResources(
+          SubjectRef s, String type, Permission p, ReadConsistency c) {
+        throw new AuthorizationUnavailableException("SpiceDB unavailable");
+      }
+    };
+
+    assertThatThrownBy(() -> new ResourceAuthorizer(unavailable)
+        .lookupAllowedResourceIds(ALICE, "order", new Permission("read"), ReadConsistency.READ_YOUR_WRITES))
+        .isInstanceOf(AuthorizationDeniedException.class)
+        .hasMessageContaining("unavailable");
+  }
+
+  @Test
   void resource_authorizer_fails_closed_when_client_unavailable_and_preserves_cause() {
     RuntimeException grpcFailure = new RuntimeException("connection refused");
     AuthorizationClient unavailable = (subject, resource, permission) -> {
