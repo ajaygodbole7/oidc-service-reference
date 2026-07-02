@@ -22,8 +22,9 @@ Every session must leave these sections populated:
 
 ## Current slice
 
-SpiceDB LookupResources + persistent datastore + Zookie consistency — ACCEPTED + COMMITTED
-2026-07-01. Human-directed platform hardening (from the "Head of Eng" review punch-list). Two slices:
+SpiceDB LookupResources + persistent datastore + Zookie consistency — ACCEPTED + COMMITTED + PUSHED
+2026-07-01 (commits `83f3bb5` + `a405414`, pushed to origin/master; stack torn down after acceptance).
+Human-directed platform hardening (from the "Head of Eng" review punch-list). Two slices:
 
 **Slice 1 — persistent Postgres datastore** (commit `83f3bb5`). SpiceDB moved off
 `--datastore-engine=memory` (wiped on every restart, forcing a reseed) onto the Postgres we already
@@ -554,7 +555,10 @@ browser E2E 10 passed / 8 skipped on the first pass with the known catalog-live 
 after `DELETE FROM products WHERE sku LIKE '%merchant-live-product%'` — not a regression. Live
 `lookupResources` + read-your-writes proven directly (write owner -> at_least_as_fresh lookup sees it)
 and end-to-end (checkout -> /orders shows the just-placed order). Both slices committed (`83f3bb5` +
-the LookupResources commit); not yet pushed.
+`a405414`) and pushed to origin/master (`8e600a4..a405414`); stack torn down (`scripts/down.sh`) to
+reclaim disk. Note: the `postgres-data` volume persists `spicedb_db`, so relationships survive the
+next `up`; if that volume is ever pruned, `spicedb-migrate` recreates the schema and the harness
+reseed repopulates relationships.
 
 Code-review fixes (Vercel React pass + pagination-scan hardening) accepted + pushed 2026-07-01:
 
